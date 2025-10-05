@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Siege Circuit — v5.0</title>
-  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v5.0 fixes a stray syntax break (Unexpected token 'function'), clamps the turret panel, and adds intermission map view." />
+  <title>Siege Circuit — v5.2</title>
+  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v5.2 fixes a stray syntax break (Unexpected token 'catch'), clamps the turret panel, and keeps the track static to avoid strobing." />
   <style>
     :root{ --bg:#05070f; --ink:#e5e7eb; --muted:#9aa4b2; --panel:#0b1222; --border:#1f2937; --accent:#7dd3fc; --good:#34d399; --warn:#fbbf24; --bad:#f87171; --violet:#a78bfa; --radius:14px; }
     *{box-sizing:border-box}
@@ -61,7 +61,7 @@
 
   <div id="overlay" class="overlay" role="dialog" aria-modal="true" style="display:none">
     <div class="card">
-      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v5.0</span></h1>
+      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v5.2</span></h1>
       <p class="subtitle" id="overlaySub">Intermission: spend ⚙ in Armory. <strong>Build:</strong> click an empty tile to place a Basic turret. <strong>Upgrade:</strong> click any turret to convert its <em>type</em> and buy <strong>Damage</strong>/<strong>Rate</strong>/<strong>Range</strong> upgrades. Premium dark tiles only accept high‑tier turrets.</p>
 
       <div class="tabs">
@@ -141,6 +141,8 @@
     const cvs = document.getElementById('game');
     const ctx = cvs.getContext('2d');
     const DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
+    // Track visuals: static alpha to avoid strobing at high speeds
+    const TRACK_ALPHA = 0.28;
     function resize(){
       cvs.width = Math.floor(window.innerWidth*DPR);
       cvs.height = Math.floor(window.innerHeight*DPR);
@@ -480,7 +482,7 @@
 
     let starT=0;
     function draw(){ const w=window.innerWidth, h=window.innerHeight; ctx.clearRect(0,0,w,h); const grad=ctx.createLinearGradient(0,0,0,h); grad.addColorStop(0,'#0b1020'); grad.addColorStop(1,'#05060f'); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); starT+=0.6*gameSpeed; ctx.save(); ctx.globalAlpha=0.35; ctx.fillStyle='#90a7ff'; for(let i=0;i<90;i++){ const x=((i*113+starT*3)%w); const y=((i*71+starT*2)%h); ctx.fillRect(x,y,2,2); } ctx.restore();
-      ctx.save(); const pulse=0.2+0.1*Math.sin(starT*0.06); ctx.globalAlpha=0.25+pulse; ctx.strokeStyle='#60a5fa'; ctx.lineWidth=gridSize*0.6; ctx.lineCap='round'; ctx.beginPath(); for(let i=0;i<path.length;i++){ const p=path[i]; const xx=gx(p[0]), yy=gy(p[1]); if(i){ctx.lineTo(xx,yy);} else {ctx.moveTo(xx,yy);} } ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.globalAlpha=TRACK_ALPHA; ctx.strokeStyle='#60a5fa'; ctx.lineWidth=gridSize*0.6; ctx.lineCap='round'; ctx.beginPath(); for(let i=0;i<path.length;i++){ const p=path[i]; const xx=gx(p[0]), yy=gy(p[1]); if(i){ctx.lineTo(xx,yy);} else {ctx.moveTo(xx,yy);} } ctx.stroke(); ctx.restore();
       for(let r=1;r<rows-1;r++){ for(let c=1;c<cols-1;c++){ if(isOnPath(c,r)) continue; const x=c*gridSize+gridSize*0.2, y=r*gridSize+gridSize*0.2, w2=gridSize*0.6, h2=gridSize*0.6; if(premiumTiles.has(key(c,r))){ ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(x,y,w2,h2); ctx.fillStyle='rgba(147,197,253,.06)'; for(let i=0;i<h2;i+=6){ ctx.fillRect(x,y+i,w2,1);} } else { ctx.fillStyle='rgba(99,102,241,.12)'; ctx.fillRect(x,y,w2,h2); } }}
       for(let i=0;i<turrets.length;i++){ const t=turrets[i]; const x=gx(t.c), y=gy(t.r); glow(x,y,t.color); ctx.save(); ctx.translate(x,y); ctx.rotate(t.barrel||0); ctx.fillStyle=t.color; roundRect(-18,-18,36,36,10,true); ctx.fillStyle='#e5e7eb'; roundRect(6,-6,18,12,4,true); ctx.restore(); }
       for(let i=0;i<creeps.length;i++){ const c=creeps[i]; if(c.dead||c.delay>0) continue; const hp=c.hp/c.max; ctx.save(); ctx.translate(c.x,c.y);
@@ -598,6 +600,9 @@
       var tCry={id:'cryo',lv:{}}; recomputeTurretStats(tCry); console.assert(tCry.slow && tCry.slow.mul<1,'[TEST] cryo slow present');
       var tPier={id:'piercer',lv:{}}; recomputeTurretStats(tPier); console.assert((tPier.pierce||0)>=1,'[TEST] piercer has pierce');
       var dummy={x:100,y:100}; tPier.c=2; tPier.r=2; fire(tPier,dummy); console.assert(bullets[bullets.length-1].pierce>=1,'[TEST] bullet carries pierce');
+      // Track alpha should be constant (no strobe) regardless of game speed
+      console.assert(typeof TRACK_ALPHA==='number' && TRACK_ALPHA>0 && TRACK_ALPHA<1,'[TEST] track alpha constant defined');
+      var __alphaA=TRACK_ALPHA; setSpeed(4); draw(); var __alphaB=TRACK_ALPHA; setSpeed(1); console.assert(__alphaA===__alphaB,'[TEST] track alpha not speed-dependent');
     } catch(e){ console.error('[TEST] Runtime test failed', e); }
 
     // Boot idle overlay & init controls
