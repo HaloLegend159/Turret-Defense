@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Siege Circuit — v4.3</title>
+  <title>Siege Circuit — v4.4</title>
   <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v4.3 fixes a JS parse error caused by stray duplicated code; on‑tile type conversion + stat upgrades + run/meta challenges intact." />
   <style>
     :root{ --bg:#05070f; --ink:#e5e7eb; --muted:#9aa4b2; --panel:#0b1222; --border:#1f2937; --accent:#7dd3fc; --good:#34d399; --warn:#fbbf24; --bad:#f87171; --violet:#a78bfa; --radius:14px; }
@@ -60,7 +60,7 @@
 
   <div id="overlay" class="overlay" role="dialog" aria-modal="true" style="display:none">
     <div class="card">
-      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v4.3</span></h1>
+      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v4.4</span></h1>
       <p class="subtitle" id="overlaySub">Intermission: spend ⚙ in Armory, unlock Tech. <strong>Build:</strong> click an empty tile to place a Basic turret. <strong>Upgrade:</strong> click any turret to convert its <em>type</em> (Basic → Piercer/Shock/Splash/Rail) <em>and</em> buy <strong>Damage</strong>/<strong>Rate</strong>/<strong>Range</strong> upgrades. Premium dark tiles only accept high‑tier turrets.</p>
 
       <div class="tabs">
@@ -213,11 +213,16 @@
 
     // ===== Turrets & balance =====
     const TURRETS = {
-      basic:{name:'Basic', cost:30, dmg:6, rof:1.0, range:2.6, color:'#9ca3af'},
-      piercer:{name:'Piercer', cost:40, dmg:12, rof:1.25, range:3.6, color:'#7dd3fc'},
-      shock:{name:'Shock', cost:55, dmg:7, rof:0.38, range:2.8, color:'#a78bfa', chain:0},
-      splash:{name:'Splash', cost:80, dmg:10, rof:0.64, range:3.0, color:'#fbbf24', splash:58},
-      rail:{name:'Rail', cost:120, dmg:65, rof:0.27, range:5.6, color:'#fb7185'}
+      // Buffed base damage a bit and expanded the roster
+      basic:{name:'Basic', cost:30, dmg:8, rof:1.0, range:2.7, color:'#9ca3af'},
+      piercer:{name:'Piercer', cost:45, dmg:14, rof:1.1, range:3.6, color:'#7dd3fc', pierce:2},
+      shock:{name:'Shock', cost:60, dmg:8, rof:0.42, range:2.9, color:'#a78bfa', chain:0},
+      splash:{name:'Splash', cost:85, dmg:12, rof:0.64, range:3.1, color:'#fbbf24', splash:62},
+      // New turret types
+      cryo:{name:'Cryo', cost:70, dmg:9, rof:1.0, range:3.4, color:'#67e8f9', slow:{mul:0.55,dur:1.6}},
+      plasma:{name:'Plasma', cost:95, dmg:18, rof:0.9, range:3.8, color:'#22d3ee', splash:42},
+      gauss:{name:'Gauss', cost:105, dmg:48, rof:0.50, range:5.0, color:'#60a5fa', beam:true},
+      rail:{name:'Rail', cost:120, dmg:72, rof:0.27, range:5.6, color:'#fb7185'}
     };
     function minAvailableTurretCost(){ return TURRETS.basic.cost; }
     function turretStatMult(){ const a=save.armory, tech=save.tech; return {dmg:1+(a.dmg*0.08)+(tech.fusion?0.10:0), rof:1+(a.fire*0.06), rng:1+(a.range*0.06)}; }
@@ -310,7 +315,7 @@
 
     // ===== Build & conversion =====
     function lvMults2(lv){ return {dmg:Math.pow(1.10,(lv&&lv.dmg)||0), rof:Math.pow(1.10,(lv&&lv.rof)||0), rng:Math.pow(1.08,(lv&&lv.rng)||0)}; }
-    function recomputeTurretStats(t){ const base=TURRETS[t.id]; const mul=turretStatMult(); const lm=lvMults2(t.lv||{}); t.dmg=base.dmg*mul.dmg*lm.dmg; t.rof=base.rof*mul.rof*lm.rof; t.range=base.range*mul.rng*lm.rng; t.color=base.color; t.chain=base.chain||0; t.splash=base.splash||0; }
+    function recomputeTurretStats(t){ const base=TURRETS[t.id]; const mul=turretStatMult(); const lm=lvMults2(t.lv||{}); t.dmg=base.dmg*mul.dmg*lm.dmg; t.rof=base.rof*mul.rof*lm.rof; t.range=base.range*mul.rng*lm.rng; t.color=base.color; t.chain=base.chain||0; t.splash=base.splash||0; t.pierce=base.pierce||0; t.beam=!!base.beam; t.slow=base.slow?{mul:base.slow.mul,dur:base.slow.dur}:null; }); t.dmg=base.dmg*mul.dmg*lm.dmg; t.rof=base.rof*mul.rof*lm.rof; t.range=base.range*mul.rng*lm.rng; t.color=base.color; t.chain=base.chain||0; t.splash=base.splash||0; }
     function recomputeAllTurrets(){ for(let i=0;i<turrets.length;i++){ recomputeTurretStats(turrets[i]); } }
 
     function showTurretPanel(t,x,y){
@@ -322,7 +327,7 @@
         '<div class="row"><span>Range +8%</span><button data-up="rng">💎 '+costUp('rng')+'</button></div>'+
         '<div class="row"><span style="opacity:.6">— — —</span><span style="opacity:.6">— — —</span></div>'+
         '<h4 style="margin:6px 0">Type Conversion</h4>';
-      var opts=['piercer','shock','splash'].concat(save.tech.sniper? ['rail']:[]);
+      var opts=['piercer','shock','cryo','plasma','gauss','splash'].concat(save.tech.sniper? ['rail']:[]);
       for(var i=0;i<opts.length;i++){
         var to=opts[i]; var fromCost=TURRETS[t.id].cost; var toCost=TURRETS[to].cost; var diff=Math.max(0,toCost-fromCost);
         var disabled=''; var note=''; var isPrem = premiumTiles.has(key(t.c,t.r));
@@ -375,8 +380,9 @@
       for(let i=0;i<creeps.length;i++){
         const c=creeps[i];
         if(c.dead) continue; if(c.delay>0){ c.delay-=dt; continue; }
+        if(c.slowT>0){ c.slowT-=dt; if(c.slowT<=0){ c.slowMul=1; c.slowT=0; }}
         if(c.kind==='boss' && c.shield<80) c.shield = Math.min(80, c.shield + 5*dt);
-        let remaining = c.speed * dt;
+        let remaining = (c.speed * (c.slowMul||1)) * dt;
         while(remaining>0 && !c.dead){
           const p = path[c.pathIndex];
           if(!p){ lives--; runProg.livesLost++; c.dead=true; if(lives<=0){ endRun(); return; } break; }
@@ -396,10 +402,12 @@
       // Turret fire
       for(let i=0;i<turrets.length;i++){ const t=turrets[i]; t.cooldown-=dt; if(t.cooldown<=0){ const target=nearestCreep(t.c,t.r,t.range*gridSize); if(target){ fire(t,target); t.cooldown=Math.max(0.05, 1/t.rof); } } }
       // Bullets
-      for(let i=bullets.length-1;i>=0;i--){ const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt; if(b.life<=0){ bullets.splice(i,1); continue; }
-        for(let j=0;j<creeps.length;j++){ const c=creeps[j]; if(c.dead||c.delay>0) continue; const d=Math.hypot(c.x-b.x,c.y-b.y); if(d<14){ let dmg=b.dmg; if(c.kind==='tank') dmg = Math.max(1, dmg - 10); if(c.kind==='boss' && c.shield>0){ const soak=Math.min(dmg, c.shield); c.shield-=soak; dmg-=soak; }
-            c.hp -= dmg; if(b.type==='splash') explode(b.x,b.y, b.splash, b.dmg*0.6); if(b.type==='rail') trackEvent('rail', b.dmg);
-            bullets.splice(i,1);
+      for(let i=bullets.length-1;i>=0;i--){ const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt; if(b._avoidIdTime){ b._avoidIdTime-=dt; if(b._avoidIdTime<=0){ b._avoidId=undefined; b._avoidIdTime=0; }} if(b.life<=0){ bullets.splice(i,1); continue; }
+        for(let j=0;j<creeps.length;j++){ const c=creeps[j]; if(c.dead||c.delay>0) continue; if(b._avoidId&&c.id===b._avoidId) continue; const d=Math.hypot(c.x-b.x,c.y-b.y); if(d<14){ let dmg=b.dmg; if(c.kind==='tank') dmg = Math.max(1, dmg - 10); if(c.kind==='boss' && c.shield>0){ const soak=Math.min(dmg, c.shield); c.shield-=soak; dmg-=soak; }
+            c.hp -= dmg; if(b.slowMul){ c.slowMul=Math.min(c.slowMul||1, b.slowMul); c.slowT=Math.max(c.slowT||0, b.slowDur||0); }
+            if(b.type==='splash') explode(b.x,b.y, b.splash, b.dmg*0.6); if(b.type==='rail') trackEvent('rail', b.dmg);
+            let removeBullet=true; if(b.pierce>0){ b.pierce--; b._avoidId=c.id; b._avoidIdTime=0.06; removeBullet=false; }
+            if(removeBullet){ bullets.splice(i,1); }
             if(c.hp<=0){ var wasBoss=(c.kind==='boss'); c.dead=true; rAdd('kills',1); const gain = wasBoss?100: (c.kind==='tank'?22: (c.kind==='swarm'?7:9)); shards += gain; if(wasBoss && b.type==='rail') rAdd('railboss',1); rSet('types', uniqueTypesOnField()); }
             break; }
         }
@@ -414,7 +422,7 @@
 
     function nearestCreep(c,r,range){ const x=gx(c), y=gy(r); let best=null, bd=1e9; for(let i=0;i<creeps.length;i++){ const m=creeps[i]; if(m.dead||m.delay>0) continue; const d=Math.hypot(m.x-x,m.y-y); if(d<range && d<bd){ best=m; bd=d; } } return best; }
 
-    function fire(t,target){ const x=gx(t.c), y=gy(t.r); const dx=target.x-x, dy=target.y-y; const d=Math.hypot(dx,dy)||1; const sp=360; const vx=dx/d*sp, vy=dy/d*sp; const type=t.splash?'splash':(t.id==='rail'?'rail':'bullet'); bullets.push({x:x,y:y,vx:vx,vy:vy,life:1.2,dmg:t.dmg,type:type,splash:t.splash||0,trail:8}); t.barrel=Math.atan2(dy,dx); addMuzzle(x,y,t.color); if(t.id==='shock' && save.tech.chain){ chainZap(target, 2, t.dmg*0.62); } if(t.id==='piercer' && save.tech.incendiary){ burn(target, t.dmg*0.32); } }
+    function fire(t,target){ const x=gx(t.c), y=gy(t.r); const dx=target.x-x, dy=target.y-y; const d=Math.hypot(dx,dy)||1; const sp=360; const vx=dx/d*sp, vy=dy/d*sp; const type=t.splash?'splash':((t.id==='rail'||t.beam)?'rail':'bullet'); const b={x:x,y:y,vx:vx,vy:vy,life:1.2,dmg:t.dmg,type:type,splash:t.splash||0,trail:8,pierce:t.pierce||0}; if(t.slow){ b.slowMul=t.slow.mul; b.slowDur=t.slow.dur; } bullets.push(b); t.barrel=Math.atan2(dy,dx); addMuzzle(x,y,t.color); if(t.id==='shock' && save.tech.chain){ chainZap(target, 2, t.dmg*0.62); } if(t.id==='piercer' && save.tech.incendiary){ burn(target, t.dmg*0.32); } }); t.barrel=Math.atan2(dy,dx); addMuzzle(x,y,t.color); if(t.id==='shock' && save.tech.chain){ chainZap(target, 2, t.dmg*0.62); } if(t.id==='piercer' && save.tech.incendiary){ burn(target, t.dmg*0.32); } }
     function chainZap(start,hops,dmg){ let current=start; for(let i=0;i<hops;i++){ const next=(function(){ for(let k=0;k<creeps.length;k++){ const c=creeps[k]; if(!c.dead && c!==current && Math.hypot(c.x-current.x,c.y-current.y)<86) return c; } return null; })(); if(!next) break; next.hp-=dmg; addZap(current.x,current.y,next.x,next.y); if(next.hp<=0){ next.dead=true; rAdd('kills',1); shards+=12; } current=next; } }
     function burn(target,dmg){ target.burn=(target.burn||0)+dmg; }
     function explode(x,y,r,dmg){ for(let i=0;i<creeps.length;i++){ const c=creeps[i]; if(c.dead||c.delay>0) continue; const d=Math.hypot(c.x-x,c.y-y); if(d<r){ let dm=dmg*(1-d/r); if(c.kind==='tank') dm=Math.max(1,dm-6); c.hp-=dm; if(c.hp<=0){ c.dead=true; rAdd('kills',1); shards+=9; } } } addExplosion(x,y,r); }
@@ -438,7 +446,7 @@
         ctx.fillStyle='#111827'; ctx.fillRect(c.x-14,c.y-18,28,4); ctx.fillStyle='#22c55e'; ctx.fillRect(c.x-14,c.y-18,28*hp,4);
         if(c.burn){ c.hp -= 6*0.033*gameSpeed; c.burn -= 6*0.033*gameSpeed; }
       }
-      for(let i=0;i<bullets.length;i++){ const b=bullets[i]; if(b.type==='rail'){ ctx.strokeStyle='#fb7185'; ctx.globalAlpha=0.9; line(b.x,b.y,b.x-b.vx*0.06,b.y-b.vy*0.06); ctx.globalAlpha=1; } else { ctx.fillStyle='#e5e7eb'; ctx.globalAlpha=0.7; ctx.fillRect(b.x-2,b.y-2,4,4); ctx.globalAlpha=1; } }
+      for(let i=0;i<bullets.length;i++){ const b=bullets[i]; if(b.type==='rail'){ ctx.strokeStyle=b.splash? '#fb7185' : '#60a5fa'; ctx.globalAlpha=0.9; line(b.x,b.y,b.x-b.vx*0.06,b.y-b.vy*0.06); ctx.globalAlpha=1; } else { ctx.fillStyle='#e5e7eb'; ctx.globalAlpha=0.7; ctx.fillRect(b.x-2,b.y-2,4,4); ctx.globalAlpha=1; } }
       ctx.save(); ctx.globalCompositeOperation='lighter'; for(let i=0;i<particles.length;i++){ const p=particles[i]; if(p.beam){ ctx.strokeStyle=p.color; ctx.globalAlpha=Math.max(0,p.life*3); line(p.x,p.y,p.x+p.vx,p.y+p.vy); } else { ctx.globalAlpha=Math.max(0,p.life*2); ctx.fillStyle=p.color||'#fff'; ctx.fillRect(p.x,p.y,2,2); } } ctx.restore();
       drawTopBars();
     }
@@ -481,7 +489,7 @@
     window.addEventListener('keydown',function(e){ if(['p','P','m','M','1','2','3','4','5','6'].includes(e.key)) e.preventDefault(); if(e.key==='p'||e.key==='P') togglePause(); if(e.key==='m'||e.key==='M') openMenu(); if(e.key==='1') setSpeed(0.5); if(e.key==='2') setSpeed(1); if(e.key==='3') setSpeed(1.5); if(e.key==='4') setSpeed(2); if(e.key==='5') setSpeed(3); if(e.key==='6') setSpeed(4); });
 
     // ===== Spawning =====
-    function makeCreep(hp, speed, delay, kind){ return {hp:hp,max:hp, speed:speed, delay:delay, pathIndex:0, x:gx(path[0][0]), y:gy(path[0][1]), kind:kind, dead:false, armor: (kind==='tank'? 10 : 0), swarm: (kind==='swarm'? 3 : 0), shield: (kind==='boss'? 80 : 0)}; }
+    let _creepSeq=0; function makeCreep(hp, speed, delay, kind){ return {id:(++_creepSeq), hp:hp,max:hp, speed:speed, delay:delay, pathIndex:0, x:gx(path[0][0]), y:gy(path[0][1]), kind:kind, dead:false, armor: (kind==='tank'? 10 : 0), swarm: (kind==='swarm'? 3 : 0), shield: (kind==='boss'? 80 : 0), slowT:0, slowMul:1}; }; }
     function spawnWave(){
       const diff = (save.settings.diff||1);
       const scale = Math.pow(1.12*diff, wave*0.85);
@@ -521,6 +529,11 @@
       ui.tPanel.style.display='none';
       // Extra: leaked globals from prior bug do not exist
       console.assert(typeof window.html==='undefined' && typeof window.div==='undefined','[TEST] no leaked globals');
+      // New turret sanity
+      console.assert(!!TURRETS.cryo && !!TURRETS.plasma && !!TURRETS.gauss,'[TEST] new turrets exist');
+      var tCry={id:'cryo',lv:{}}; recomputeTurretStats(tCry); console.assert(tCry.slow && tCry.slow.mul<1,'[TEST] cryo slow present');
+      var tPier={id:'piercer',lv:{}}; recomputeTurretStats(tPier); console.assert((tPier.pierce||0)>=1,'[TEST] piercer has pierce');
+      var dummy={x:100,y:100}; tPier.c=2; tPier.r=2; fire(tPier,dummy); console.assert(bullets[bullets.length-1].pierce>=1,'[TEST] bullet carries pierce');
     } catch(e){ console.error('[TEST] Runtime test failed', e); }
 
     // Boot idle overlay & init controls
