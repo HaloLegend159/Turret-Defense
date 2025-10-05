@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Siege Circuit — v4.3</title>
+  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v4.3 fixes a JS parse error caused by stray duplicated code; on‑tile type conversion + stat upgrades + run/meta challenges intact." />
+  <style>
+    :root{ --bg:#05070f; --ink:#e5e7eb; --muted:#9aa4b2; --panel:#0b1222; --border:#1f2937; --accent:#7dd3fc; --good:#34d399; --warn:#fbbf24; --bad:#f87171; --violet:#a78bfa; --radius:14px; }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:radial-gradient(1400px 1000px at 70% -10%,#0f172a 0%,#05070f 60%);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;overflow:hidden}
+    canvas{display:block}
+    .hud{position:fixed;left:12px;top:12px;display:flex;gap:10px;align-items:center;padding:8px 12px;background:rgba(11,18,34,.55);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:12px;z-index:10}
+    .pill{display:inline-flex;align-items:center;gap:8px;background:#0b1222;border:1px solid #1c2436;border-radius:999px;padding:6px 10px}
+    .btns{position:fixed;right:12px;top:12px;display:flex;gap:8px;z-index:10;flex-wrap:wrap;max-width:50vw}
+    button{appearance:none;background:#121a2d;color:var(--ink);border:1px solid #1f2a42;padding:8px 12px;border-radius:10px;cursor:pointer;transition:transform .05s ease,background .2s ease}
+    button:hover{background:#172036}
+    button:active{transform:translateY(1px)}
+    .overlay{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,rgba(2,6,23,.78),rgba(2,6,23,.58));z-index:20}
+    .card{background:rgba(9,14,30,.95);border:1px solid var(--border);border-radius:var(--radius);padding:22px;max-width:1120px;width:min(94vw,1120px);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .title{font-size:26px;font-weight:800;margin:0 0 6px}
+    .subtitle{margin:0 0 12px;color:var(--muted)}
+    .tabs{display:flex;gap:8px;margin:10px 0}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+    .tile{background:#0c1528;border:1px solid #1c2436;border-radius:12px;padding:12px}
+    .kv{display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid #21304b;border-radius:10px;background:#0b1222;margin-top:6px}
+    .badge{display:inline-flex;align-items:center;gap:6px;background:#0b1222;border:1px solid #1c2436;border-radius:999px;padding:2px 8px;font-size:12px;color:var(--muted)}
+    .shopgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+    .shopitem{background:#0b1222;border:1px solid #1c2436;padding:12px;border-radius:12px}
+    .shopitem h4{margin:0 0 6px;font-size:15px}
+    .owned{color:var(--good)}
+    .price{color:var(--warn);font-weight:700}
+    .foot{display:flex;justify-content:space-between;gap:8px;margin-top:10px;align-items:center}
+    .tpanel{position:fixed;z-index:50;transform:translate(-50%,-100%);background:#0b1222;border:1px solid #23314b;border-radius:12px;padding:10px;min-width:280px;max-width:360px;box-shadow:0 10px 30px rgba(0,0,0,.35);pointer-events:auto}
+    .tpanel h4{margin:0 0 6px;font-size:14px}
+    .tpanel .row{display:flex;justify-content:space-between;align-items:center;margin:6px 0}
+  </style>
+</head>
+<body>
+  <canvas id="game" aria-label="Siege Circuit battlefield" role="img"></canvas>
+
+  <div class="hud" aria-live="polite">
+    <div class="pill"><strong>Wave</strong> <span id="wave">1</span></div>
+    <div class="pill"><strong>Lives</strong> <span id="lives">20</span></div>
+    <div class="pill"><strong>⚙ Cores</strong> <span id="cores">0</span></div>
+    <div class="pill"><strong>💎 Shards</strong> <span id="shards">0</span></div>
+    <div class="pill"><strong>⏩ Speed</strong> <span id="speed">1x</span></div>
+  </div>
+  <div class="btns">
+    <button id="menuBtn">Menu (M)</button>
+    <button id="pauseBtn">Pause (P)</button>
+    <button id="spd05" title="Speed 0.5x (key 1)">0.5x</button>
+    <button id="spd10" title="Speed 1x (key 2)">1x</button>
+    <button id="spd15" title="Speed 1.5x (key 3)">1.5x</button>
+    <button id="spd20" title="Speed 2x (key 4)">2x</button>
+    <button id="spd30" title="Speed 3x (key 5)">3x</button>
+    <button id="spd40" title="Speed 4x (key 6)">4x</button>
+  </div>
+
+  <div id="overlay" class="overlay" role="dialog" aria-modal="true" style="display:none">
+    <div class="card">
+      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v4.3</span></h1>
+      <p class="subtitle" id="overlaySub">Intermission: spend ⚙ in Armory, unlock Tech. <strong>Build:</strong> click an empty tile to place a Basic turret. <strong>Upgrade:</strong> click any turret to convert its <em>type</em> (Basic → Piercer/Shock/Splash/Rail) <em>and</em> buy <strong>Damage</strong>/<strong>Rate</strong>/<strong>Range</strong> upgrades. Premium dark tiles only accept high‑tier turrets.</p>
+
+      <div class="tabs">
+        <button id="tabPlay">▶ Play</button>
+        <button id="tabArmory">🧪 Armory</button>
+        <button id="tabChallenges">🏆 Challenges</button>
+        <button id="tabTech">🧬 Tech Tree</button>
+        <button id="tabSettings">⚙️ Settings</button>
+      </div>
+
+      <div id="panelPlay" class="grid">
+        <div class="tile">
+          <h3>Profile</h3>
+          <div class="kv"><span>Best Wave</span><strong id="p_best">1</strong></div>
+          <div class="kv"><span>Current Shards (run)</span><strong id="p_shards">0</strong></div>
+          <div class="kv"><span>Total Cores (meta)</span><strong id="p_cores">0</strong></div>
+          <div class="kv"><span>Permanent Tech</span><strong id="p_tech">0 unlocked</strong></div>
+          <div class="kv"><span>Difficulty</span><strong id="p_diff">Standard</strong></div>
+        </div>
+        <div class="tile">
+          <h3>Flow</h3>
+          <p>Click an empty buildable tile to place a <strong>Basic</strong> turret. Then click any turret to open its panel: <em>Type Conversion</em> (Basic → Piercer/Shock/Splash/Rail) and <em>Stat Upgrades</em> (Damage/Rate/Range). Costs are shown and deducted from Shards.</p>
+          <div class="foot">
+            <button id="startBtn">Start Run</button>
+            <button id="resumeBtn" style="display:none">Resume</button>
+            <button id="nextBtn" style="display:none">Next Wave</button>
+            <button id="resetBtn" title="Reset all saved progress">Reset Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="panelArmory" style="display:none">
+        <h3>Armory — Permanent Upgrades (spend Cores ⚙)</h3>
+        <div class="badge">You have <strong id="a_cores">0</strong> ⚙</div>
+        <div class="shopgrid" id="armoryGrid"></div>
+      </div>
+
+      <div id="panelChallenges" style="display:none">
+        <h3>Run Challenges (reset each run)</h3>
+        <div id="runChallengeList" class="grid"></div>
+        <h3 style="margin-top:12px">Meta Challenges</h3>
+        <div id="challengeList" class="grid"></div>
+      </div>
+
+      <div id="panelTech" style="display:none">
+        <h3>Tech Tree (unlocks turret variants)</h3>
+        <div class="shopgrid" id="techGrid"></div>
+      </div>
+
+      <div id="panelSettings" style="display:none">
+        <div class="grid">
+          <div class="tile"><h3>Graphics</h3>
+            <div class="kv"><span>Particles</span><input id="setParticles" type="range" min="0" max="1" step="1"/></div>
+            <div class="kv"><span>Glow</span><input id="setGlow" type="range" min="0" max="1" step="1"/></div>
+          </div>
+          <div class="tile"><h3>Gameplay</h3>
+            <div class="kv"><span>Difficulty</span>
+              <select id="setDiff">
+                <option value="1">Standard</option>
+                <option value="1.35">Veteran</option>
+                <option value="1.8">Insane</option>
+              </select>
+            </div>
+            <div class="kv"><span>Auto‑continue at intermission</span>
+              <label style="display:flex;align-items:center;gap:6px"><input id="setAuto" type="checkbox"/> Enable</label>
+            </div>
+            <div class="kv"><span>Auto‑continue after (sec)</span>
+              <input id="setAutoSec" type="number" min="2" max="30" step="1" style="width:80px" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="tPanel" class="tpanel" style="display:none"></div>
+
+  <script>
+  (function(){
+    'use strict';
+    const cvs = document.getElementById('game');
+    const ctx = cvs.getContext('2d');
+    const DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
+    function resize(){
+      cvs.width = Math.floor(window.innerWidth*DPR);
+      cvs.height = Math.floor(window.innerHeight*DPR);
+      cvs.style.width = window.innerWidth+'px';
+      cvs.style.height = window.innerHeight+'px';
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+    }
+    window.addEventListener('resize', resize); resize();
+
+    function $(s){return document.querySelector(s)}
+    const ui = {
+      wave:$('#wave'), lives:$('#lives'), cores:$('#cores'), shards:$('#shards'), speed:$('#speed'),
+      overlay:$('#overlay'), pauseBtn:$('#pauseBtn'), menuBtn:$('#menuBtn'),
+      spd05:$('#spd05'), spd10:$('#spd10'), spd15:$('#spd15'), spd20:$('#spd20'), spd30:$('#spd30'), spd40:$('#spd40'),
+      startBtn:$('#startBtn'), resumeBtn:$('#resumeBtn'), nextBtn:$('#nextBtn'), resetBtn:$('#resetBtn'),
+      tabPlay:$('#tabPlay'), tabArmory:$('#tabArmory'), tabChallenges:$('#tabChallenges'), tabTech:$('#tabTech'), tabSettings:$('#tabSettings'),
+      panelPlay:$('#panelPlay'), panelArmory:$('#panelArmory'), panelChallenges:$('#panelChallenges'), panelTech:$('#panelTech'), panelSettings:$('#panelSettings'),
+      p_best:$('#p_best'), p_cores:$('#p_cores'), p_shards:$('#p_shards'), p_tech:$('#p_tech'), p_diff:$('#p_diff'),
+      a_cores:$('#a_cores'), armoryGrid:$('#armoryGrid'), challengeList:$('#challengeList'), runChallengeList:$('#runChallengeList'), techGrid:$('#techGrid'),
+      setParticles:$('#setParticles'), setGlow:$('#setGlow'), setDiff:$('#setDiff'), setAuto:$('#setAuto'), setAutoSec:$('#setAutoSec'),
+      overlaySub:$('#overlaySub'), tPanel:$('#tPanel')
+    };
+
+    // Forward backdrop clicks to canvas so intermission doesn't block field interactions
+    ui.overlay.addEventListener('click', function(e){
+      const card = e.target.closest('.card');
+      if(!card){
+        const evt = new MouseEvent('click', {clientX:e.clientX, clientY:e.clientY, bubbles:true});
+        cvs.dispatchEvent(evt);
+      }
+    });
+
+    // ===== Persistent Save (stable key + migration) =====
+    const SAVE_ROOT='siege.circuit';
+    const LEGACY_KEYS=['siege.circuit.v3.7','siege.circuit.v3.6','siege.circuit.v3.5','siege.circuit.v3.4','siege.circuit.v3.3','siege.circuit.v3.2','siege.circuit.v3.1','siege.circuit.v3','siege.circuit.v2'];
+    const SAVE_VERSION=3;
+    function defaultSave(){
+      return {version:SAVE_VERSION, bestWave:1, cores:0, tech:{}, settings:{particles:1, glow:1, diff:1, autoIntermission:0, autoIntermissionSec:6},
+              armory:{dmg:0, fire:0, range:0, startShards:0, interest:0}, unlocked:{}, challenges:{}};
+    }
+    function normalize(s){
+      const d=defaultSave();
+      return {
+        version: SAVE_VERSION,
+        bestWave: Math.max(d.bestWave, (s && s.bestWave)||1),
+        cores: Math.max(0, (s && s.cores)||0),
+        tech: Object.assign({}, d.tech, (s && s.tech)||{}),
+        settings: Object.assign({}, d.settings, (s && s.settings)||{}),
+        armory: Object.assign({}, d.armory, (s && s.armory)||{}),
+        unlocked: Object.assign({}, d.unlocked, (s && s.unlocked)||{}),
+        challenges: Object.assign({}, d.challenges, (s && s.challenges)||{})
+      };
+    }
+    function loadSave(){
+      let s=null;
+      try{ s=JSON.parse(localStorage.getItem(SAVE_ROOT)||'null'); }catch{}
+      if(!s){
+        for(const k of LEGACY_KEYS){ try{ const raw=localStorage.getItem(k); if(raw){ s=JSON.parse(raw); break; } }catch{} }
+      }
+      s = s? normalize(s) : defaultSave();
+      localStorage.setItem(SAVE_ROOT, JSON.stringify(s));
+      return s;
+    }
+    let save = loadSave();
+    function persist(){ localStorage.setItem(SAVE_ROOT, JSON.stringify(save)); refreshProfile(); }
+
+    // ===== Turrets & balance =====
+    const TURRETS = {
+      basic:{name:'Basic', cost:30, dmg:6, rof:1.0, range:2.6, color:'#9ca3af'},
+      piercer:{name:'Piercer', cost:40, dmg:12, rof:1.25, range:3.6, color:'#7dd3fc'},
+      shock:{name:'Shock', cost:55, dmg:7, rof:0.38, range:2.8, color:'#a78bfa', chain:0},
+      splash:{name:'Splash', cost:80, dmg:10, rof:0.64, range:3.0, color:'#fbbf24', splash:58},
+      rail:{name:'Rail', cost:120, dmg:65, rof:0.27, range:5.6, color:'#fb7185'}
+    };
+    function minAvailableTurretCost(){ return TURRETS.basic.cost; }
+    function turretStatMult(){ const a=save.armory, tech=save.tech; return {dmg:1+(a.dmg*0.08)+(tech.fusion?0.10:0), rof:1+(a.fire*0.06), rng:1+(a.range*0.06)}; }
+
+    // ===== Challenges =====
+    const CHALLS = [
+      {id:'w5', desc:'Reach Wave 5', goal:1, track:'wave', mark:5, reward:{cores:20}},
+      {id:'w10', desc:'Reach Wave 10', goal:1, track:'wave', mark:10, reward:{cores:30}},
+      {id:'w15', desc:'Reach Wave 15', goal:1, track:'wave', mark:15, reward:{cores:40}},
+      {id:'multi', desc:'Own 12 turrets at once', goal:12, track:'turrets', reward:{cores:30}},
+      {id:'rich', desc:'Hold 600+ shards at any time', goal:600, track:'maxshards', reward:{cores:30}},
+      {id:'rail', desc:'Deal 25,000 dmg with Rail', goal:25000, track:'rail', reward:{cores:40}}
+    ];
+    const RUN_CHALLS = [
+      {id:'r_kill50', desc:'Eliminate 50 enemies this run', goal:50, track:'kills', reward:{shards:60}},
+      {id:'r_spend200', desc:'Spend 200 shards this run', goal:200, track:'spend', reward:{shards:80}},
+      {id:'r_wave5_noloss', desc:'Reach Wave 5 with 0 lives lost', goal:1, track:'noloss', reward:{shards:100}},
+      {id:'r_types3', desc:'Own 3+ different turret types', goal:3, track:'types', reward:{shards:50}},
+      {id:'r_convert3', desc:'Convert 3 Basic → type', goal:3, track:'conversions', reward:{shards:50}},
+      {id:'r_railboss', desc:'Kill a boss with Rail', goal:1, track:'railboss', reward:{shards:90}}
+    ];
+
+    function addProgress(id, delta){
+      var c = save.challenges[id]; if(!c){ c={p:0,done:false}; save.challenges[id]=c; }
+      if(c.done) return; c.p += delta; var meta=null; for(var i=0;i<CHALLS.length;i++){ if(CHALLS[i].id===id){ meta=CHALLS[i]; break; } }
+      if(meta && c.p >= meta.goal){ c.done=true; if(meta.reward && meta.reward.cores){ save.cores+=meta.reward.cores; toast('Challenge complete: +'+meta.reward.cores+' ⚙'); } persist(); buildChallenges(); }
+    }
+
+    let runProg = null;
+    function resetRunProg(){ runProg={p:{}, done:{} , livesLost:0}; }
+    function rAdd(track, delta){ var p=runProg.p[track]||0; p+=delta; runProg.p[track]=p; checkRunChalls(); }
+    function rSet(track, val){ runProg.p[track]=val; checkRunChalls(); }
+    function rGet(track){ return runProg.p[track]||0; }
+    function checkRunChalls(){ for(var i=0;i<RUN_CHALLS.length;i++){ var rc=RUN_CHALLS[i]; if(runProg.done[rc.id]) continue; var val=rGet(rc.track); if(val>=rc.goal){ runProg.done[rc.id]=true; var reward=rc.reward&&rc.reward.shards||0; shards+=reward; toast('Run challenge: '+rc.desc+' +'+reward+' 💎'); } } buildChallenges(); refreshProfile(); }
+
+    function trackEvent(type, val){ if(type==='wave'){ for(var i=0;i<CHALLS.length;i++){ var c=CHALLS[i]; if(c.track==='wave' && val>=c.mark) addProgress(c.id,1); } addProgress('rail',0); } if(type==='turrets') addProgress('multi', val); if(type==='maxshards') addProgress('rich', val); if(type==='rail') addProgress('rail', val); }
+
+    // ===== Game state =====
+    let running=false, paused=false, intermission=false; let tPrev=0; let gameSpeed=1;
+    let gridSize=56; let cols, rows; let path=[]; let lives=20; let shards=0; let wave=1; let interest=0;
+    let turrets=[]; let bullets=[]; let creeps=[]; let particles=[];
+
+    let intermissionTimerId=null, intermissionETA=0;
+
+    function gridInit(){
+      cols = Math.floor(window.innerWidth/gridSize)-1; rows = Math.floor(window.innerHeight/gridSize)-2; if(cols<10) cols=10; if(rows<8) rows=8;
+      path=[]; let y=2; let dir=1; while(y<rows-1){ if(dir>0){ for(let x=1;x<cols-1;x++) path.push([x,y]); } else { for(let x=cols-2;x>=1;x--) path.push([x,y]); } y+=2; dir*=-1; }
+      premiumTiles.clear(); for(let r=1;r<rows-1;r++){ for(let c=1;c<cols-1;c++){ if(isOnPath(c,r)) continue; const centerBias=(Math.abs(c-cols/2)+Math.abs(r-rows/2)); if(((c+r)%2===0) && centerBias<(cols+rows)/3) premiumTiles.add(key(c,r)); }}
+    }
+    let premiumTiles = new Set();
+    gridInit(); window.addEventListener('resize', gridInit);
+
+    function gx(c){ return c*gridSize + gridSize*0.5; } function gy(r){ return r*gridSize + gridSize*0.5; } function key(c,r){ return c+','+r; }
+
+    // ===== UI helpers =====
+    function showTab(name){ ui.panelPlay.style.display=name==='Play'? '' : 'none'; ui.panelArmory.style.display=name==='Armory'? '' : 'none'; ui.panelChallenges.style.display=name==='Challenges'? '' : 'none'; ui.panelTech.style.display=name==='Tech'? '' : 'none'; ui.panelSettings.style.display=name==='Settings'? '' : 'none'; }
+    function updatePlayButtons(){ ui.startBtn.style.display = (!running && !intermission) ? '' : 'none'; ui.nextBtn.style.display  = (intermission) ? '' : 'none'; ui.resumeBtn.style.display = (running && !intermission) ? '' : 'none'; }
+    function openMenu(){ paused=true; ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); }
+    function togglePause(){ if(!running) return; paused=!paused; ui.pauseBtn.textContent = paused? 'Resume (P)' : 'Pause (P)'; }
+    function setSpeed(n){ gameSpeed = Math.max(0.25, Math.min(4, n)); ui.speed.textContent = gameSpeed+'x'; }
+
+    function refreshProfile(){ ui.wave.textContent=wave; ui.lives.textContent=lives; ui.cores.textContent=save.cores; ui.shards.textContent=Math.floor(shards); ui.p_best.textContent=save.bestWave; ui.p_cores.textContent=save.cores; ui.a_cores.textContent=save.cores; ui.p_shards.textContent=Math.floor(shards); ui.p_tech.textContent=Object.keys(save.tech).length+' unlocked'; ui.p_diff.textContent={1:'Standard','1.35':'Veteran','1.8':'Insane'}[String(save.settings.diff)||'1']; ui.speed.textContent=gameSpeed+'x'; }
+
+    // ===== Armory & Tech =====
+    const ARMORY = [
+      {id:'dmg', name:'All Turret Damage', desc:'+8% dmg per level', base:40, scale:1.75, max:20},
+      {id:'fire', name:'All Fire Rate', desc:'+6% rof per level', base:50, scale:1.8, max:20},
+      {id:'range', name:'All Range', desc:'+6% range per level', base:50, scale:1.7, max:15},
+      {id:'startShards', name:'Starting Shards', desc:'+15 starting shards per level', base:60, scale:1.9, max:10},
+      {id:'interest', name:'Wave Interest', desc:'+2% shards interest per wave', base:80, scale:2.0, max:10}
+    ];
+    function armoryPrice(it){ return Math.floor(it.base*Math.pow(it.scale, save.armory[it.id]||0)); }
+    function buildArmory(){ ui.armoryGrid.innerHTML=''; ARMORY.forEach(function(it){ const lvl=save.armory[it.id]||0; const price=armoryPrice(it); const maxed=lvl>=it.max; const div=document.createElement('div'); div.className='shopitem'; var priceHTML = maxed?'<span class="owned">Maxed</span>':'<span class="price">⚙ '+price+'</span>'; var btnHTML = maxed?'':'<button data-buyarm="'+it.id+'">Buy</button>'; div.innerHTML='<h4>'+it.name+'</h4><div style="color:var(--muted);margin-bottom:6px">'+it.desc+'</div><div class="foot"><div>'+priceHTML+'<span class="badge">Lv '+lvl+'/'+it.max+'</span></div><div>'+btnHTML+'</div></div>'; ui.armoryGrid.appendChild(div); }); ui.armoryGrid.querySelectorAll('[data-buyarm]').forEach(function(b){ b.addEventListener('click',function(){ const id=b.getAttribute('data-buyarm'); const it=ARMORY.find(function(x){return x.id===id}); const price=armoryPrice(it); if(save.cores<price){ toast('Not enough Cores'); return;} save.cores-=price; save.armory[id]++; persist(); buildArmory(); recomputeAllTurrets(); }); }); }
+
+    const TECH = [
+      {id:'incendiary', cost:120, name:'Incendiary Rounds', desc:'Piercer applies burn'},
+      {id:'chain', cost:150, name:'Arc Chain', desc:'Shock can chain to +2 targets'},
+      {id:'sniper', cost:160, name:'Rail Sniper', desc:'Unlock Rail turret (long‑range, high dmg)'},
+      {id:'storm', cost:180, name:'Storm Capacitors', desc:'Overload ultimate: map‑wide zap'},
+      {id:'fusion', cost:220, name:'Fusion Reactor', desc:'+1 life and +10% global dmg'}
+    ];
+    function buildTech(){ ui.techGrid.innerHTML=''; TECH.forEach(function(t){ const owned=!!save.tech[t.id]; const div=document.createElement('div'); div.className='shopitem'; var priceHTML = owned?'<span class="owned">Unlocked</span>':'<span class="price">⚙ '+t.cost+'</span>'; var btnHTML = owned?'':'<button data-buytech="'+t.id+'">Unlock</button>'; div.innerHTML='<h4>'+t.name+'</h4><div style="color:var(--muted);margin-bottom:6px">'+t.desc+'</div><div class="foot"><div>'+priceHTML+'</div><div>'+btnHTML+'</div></div>'; ui.techGrid.appendChild(div); }); ui.techGrid.querySelectorAll('[data-buytech]').forEach(function(b){ b.addEventListener('click',function(){ const id=b.getAttribute('data-buytech'); const t=TECH.find(function(x){return x.id===id}); if(save.cores<t.cost){ toast('Not enough Cores'); return;} save.cores-=t.cost; save.tech[id]=true; if(id==='fusion') lives+=1; persist(); buildTech(); recomputeAllTurrets(); }); }); }
+
+    function buildChallenges(){
+      // Meta
+      ui.challengeList.innerHTML=''; CHALLS.forEach(function(c){ const st=save.challenges[c.id]||{p:0,done:false}; const div=document.createElement('div'); div.className='tile'; var progress='Progress: '+Math.floor(st.p)+'/'+c.goal; if(c.track==='wave'){ progress += ' (mark '+c.mark+')'; } var badge=st.done?'<span class="badge" style="color:var(--good)">Completed</span>':'<span class="badge">'+progress+'</span>'; div.innerHTML='<h4 style="margin:0 0 6px">'+c.desc+'</h4><div class="foot"><div>'+badge+'</div><div class="badge">Reward: '+(c.reward.cores||0)+' ⚙</div></div>'; ui.challengeList.appendChild(div); });
+      // Run
+      ui.runChallengeList.innerHTML=''; for(var i=0;i<RUN_CHALLS.length;i++){ var rc=RUN_CHALLS[i]; var val=rGet(rc.track); var done=!!runProg.done[rc.id]; var prog='Progress: '+Math.floor(val)+'/'+rc.goal; var badge=done?'<span class="badge" style="color:var(--good)">Completed</span>':'<span class="badge">'+prog+'</span>'; var div2=document.createElement('div'); div2.className='tile'; div2.innerHTML='<h4 style="margin:0 0 6px">'+rc.desc+'</h4><div class="foot"><div>'+badge+'</div><div class="badge">Reward: '+(rc.reward.shards||0)+' 💎</div></div>'; ui.runChallengeList.appendChild(div2); }
+    }
+
+    // ===== Build & conversion =====
+    function lvMults2(lv){ return {dmg:Math.pow(1.10,(lv&&lv.dmg)||0), rof:Math.pow(1.10,(lv&&lv.rof)||0), rng:Math.pow(1.08,(lv&&lv.rng)||0)}; }
+    function recomputeTurretStats(t){ const base=TURRETS[t.id]; const mul=turretStatMult(); const lm=lvMults2(t.lv||{}); t.dmg=base.dmg*mul.dmg*lm.dmg; t.rof=base.rof*mul.rof*lm.rof; t.range=base.range*mul.rng*lm.rng; t.color=base.color; t.chain=base.chain||0; t.splash=base.splash||0; }
+    function recomputeAllTurrets(){ for(let i=0;i<turrets.length;i++){ recomputeTurretStats(turrets[i]); } }
+
+    function showTurretPanel(t,x,y){
+      const div=ui.tPanel; if(!t.lv) t.lv={dmg:0,rof:0,rng:0};
+      function costUp(which){ return Math.floor(30*Math.pow(1.7, (t.lv && t.lv[which])||0)); }
+      var html='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h4 style="margin:0">'+TURRETS[t.id].name+' — Upgrades</h4><button data-close style="background:#111827;border:1px solid #1f2937;border-radius:8px;padding:4px 8px">✕</button></div>'+
+        '<div class="row"><span>Damage +10%</span><button data-up="dmg">💎 '+costUp('dmg')+'</button></div>'+
+        '<div class="row"><span>Fire Rate +10%</span><button data-up="rof">💎 '+costUp('rof')+'</button></div>'+
+        '<div class="row"><span>Range +8%</span><button data-up="rng">💎 '+costUp('rng')+'</button></div>'+
+        '<div class="row"><span style="opacity:.6">— — —</span><span style="opacity:.6">— — —</span></div>'+
+        '<h4 style="margin:6px 0">Type Conversion</h4>';
+      var opts=['piercer','shock','splash'].concat(save.tech.sniper? ['rail']:[]);
+      for(var i=0;i<opts.length;i++){
+        var to=opts[i]; var fromCost=TURRETS[t.id].cost; var toCost=TURRETS[to].cost; var diff=Math.max(0,toCost-fromCost);
+        var disabled=''; var note=''; var isPrem = premiumTiles.has(key(t.c,t.r));
+        if(isPrem && toCost<70){ disabled=' disabled'; note=' (premium tile)'; }
+        if(to==='rail' && !save.tech.sniper){ disabled=' disabled'; note=' (unlock in Tech)'; }
+        if(toCost<=fromCost && t.id!=='basic'){ disabled=' disabled'; note=' (lateral/cheaper)'; }
+        html+='<div class="row"><span>Convert to '+TURRETS[to].name+note+'</span><button data-convert="'+to+'"'+disabled+'>💎 '+diff+'</button></div>';
+      }
+      html+='<div class="row"><span style="color:#9aa4b2">Sell (refund 50%)</span><button data-sell>↺ Sell</button></div>';
+      div.innerHTML=html; div.style.display='block';
+      // Position panel (avoid off-screen)
+      const margin=12, vw=window.innerWidth, vh=window.innerHeight; let tx=Math.max(margin, Math.min(vw-margin, x)); let ty=Math.max(margin, Math.min(vh-margin, y));
+      div.style.left=tx+'px'; div.style.top=ty+'px';
+      div.style.transform = (ty<200)? 'translate(-50%, 10px)' : 'translate(-50%,-100%)';
+      // Interactions
+      const closeBtn=div.querySelector('[data-close]'); if(closeBtn){ closeBtn.onclick=function(){ div.style.display='none'; }; }
+      div.querySelectorAll('[data-up]').forEach(function(b){ b.onclick=function(){ var k=b.getAttribute('data-up'); var price=costUp(k); if(shards<price){ toast('Not enough Shards'); return;} shards-=price; t.lv[k]=(t.lv[k]||0)+1; recomputeTurretStats(t); rAdd('spend', price); refreshProfile(); showTurretPanel(t,x,y); }; });
+      div.querySelectorAll('[data-convert]').forEach(function(b){ b.onclick=function(){ var to=b.getAttribute('data-convert'); var fromCost=TURRETS[t.id].cost; var toCost=TURRETS[to].cost; var isPrem=premiumTiles.has(key(t.c,t.r)); if(isPrem && toCost<70){ toast('Premium tile requires high‑tier turret'); return; }
+          var price=Math.max(0,toCost-fromCost); if(shards<price){ toast('Not enough Shards'); return; }
+          shards-=price; rAdd('spend', price); t.id=to; recomputeTurretStats(t); rSet('types', uniqueTypesOnField()); refreshProfile(); showTurretPanel(t,x,y); }; });
+      var sellBtn=div.querySelector('[data-sell]'); if(sellBtn){ sellBtn.onclick=function(){ shards+=Math.floor((TURRETS[t.id].cost)/2); turrets.splice(turrets.indexOf(t),1); div.style.display='none'; rSet('types', uniqueTypesOnField()); refreshProfile(); }; }
+    }
+
+    function uniqueTypesOnField(){ var s={}; for(let i=0;i<turrets.length;i++){ s[turrets[i].id]=1; } var n=0; for(var k in s){ if(Object.prototype.hasOwnProperty.call(s,k)) n++; } return n; }
+
+    cvs.addEventListener('click',function(e){
+      if(!( (running && !paused) || intermission )) return;
+      const rect = cvs.getBoundingClientRect();
+      const sx = e.clientX - rect.left; const sy = e.clientY - rect.top; if(sx<0||sy<0||sx>rect.width||sy>rect.height) return;
+      const g = screenToGrid(sx, sy); if(!g) return;
+      const t = turrets.find(function(tt){return tt.c===g.c && tt.r===g.r});
+      if(t){ showTurretPanel(t, e.clientX, e.clientY); return; }
+      if(isOnPath(g.c,g.r) || !isBuildable(g.c,g.r)) return;
+      const isPremium = premiumTiles.has(key(g.c,g.r));
+      if(isPremium && TURRETS.basic.cost<70){ toast('Premium tile: requires higher‑tier turret'); return; }
+      if(shards>=TURRETS.basic.cost){ placeTurret('basic',g.c,g.r); shards -= TURRETS.basic.cost; rAdd('spend', TURRETS.basic.cost); rSet('types', uniqueTypesOnField()); refreshProfile(); }
+    });
+
+    function screenToGrid(sx,sy){ const c=Math.floor(sx/gridSize), r=Math.floor(sy/gridSize); if(c<1||r<1||c>=cols-1||r>=rows-1) return null; return {c:c,r:r}; }
+    function isOnPath(c,r){ return path.some(function(p){return p[0]===c && p[1]===r}); }
+    function isBuildable(c,r){ if(c<1||r<1||c>=cols-1||r>=rows-1) return false; if(isOnPath(c,r)) return false; if(turrets.some(function(t){return t.c===c&&t.r===r})) return false; return true; }
+
+    function placeTurret(id,c,r){ const base=TURRETS[id]; const mul=turretStatMult(); const t={id:id,c:c,r:r, cooldown:0, dmg:base.dmg*mul.dmg, rof:base.rof*mul.rof, range:base.range*mul.rng, color:base.color, chain:base.chain||0, splash:base.splash||0, barrel:0, lv:{dmg:0,rof:0,rng:0}}; turrets.push(t); trackEvent('turrets', turrets.length); }
+
+    // ===== Loop =====
+    function step(t){ if(!running){ tPrev=t; return requestAnimationFrame(step);} let dt=Math.min(0.033,(t-tPrev)/1000); dt*=gameSpeed; tPrev=t; if(!paused){ update(dt); draw(); } requestAnimationFrame(step); }
+
+    function update(dt){
+      // Creeps movement
+      for(let i=0;i<creeps.length;i++){
+        const c=creeps[i];
+        if(c.dead) continue; if(c.delay>0){ c.delay-=dt; continue; }
+        if(c.kind==='boss' && c.shield<80) c.shield = Math.min(80, c.shield + 5*dt);
+        let remaining = c.speed * dt;
+        while(remaining>0 && !c.dead){
+          const p = path[c.pathIndex];
+          if(!p){ lives--; runProg.livesLost++; c.dead=true; if(lives<=0){ endRun(); return; } break; }
+          const nx=gx(p[0]), ny=gy(p[1]);
+          const dx=nx-c.x, dy=ny-c.y; const dist=Math.hypot(dx,dy);
+          if(dist<=remaining){
+            c.x = nx; c.y = ny; c.pathIndex++;
+            remaining -= dist;
+            if(c.pathIndex>=path.length){ lives--; runProg.livesLost++; c.dead=true; if(lives<=0){ endRun(); return; } break; }
+          } else {
+            const ux = dx/(dist||1), uy = dy/(dist||1);
+            c.x += ux*remaining; c.y += uy*remaining;
+            remaining = 0;
+          }
+        }
+      }
+      // Turret fire
+      for(let i=0;i<turrets.length;i++){ const t=turrets[i]; t.cooldown-=dt; if(t.cooldown<=0){ const target=nearestCreep(t.c,t.r,t.range*gridSize); if(target){ fire(t,target); t.cooldown=Math.max(0.05, 1/t.rof); } } }
+      // Bullets
+      for(let i=bullets.length-1;i>=0;i--){ const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt; if(b.life<=0){ bullets.splice(i,1); continue; }
+        for(let j=0;j<creeps.length;j++){ const c=creeps[j]; if(c.dead||c.delay>0) continue; const d=Math.hypot(c.x-b.x,c.y-b.y); if(d<14){ let dmg=b.dmg; if(c.kind==='tank') dmg = Math.max(1, dmg - 10); if(c.kind==='boss' && c.shield>0){ const soak=Math.min(dmg, c.shield); c.shield-=soak; dmg-=soak; }
+            c.hp -= dmg; if(b.type==='splash') explode(b.x,b.y, b.splash, b.dmg*0.6); if(b.type==='rail') trackEvent('rail', b.dmg);
+            bullets.splice(i,1);
+            if(c.hp<=0){ var wasBoss=(c.kind==='boss'); c.dead=true; rAdd('kills',1); const gain = wasBoss?100: (c.kind==='tank'?22: (c.kind==='swarm'?7:9)); shards += gain; if(wasBoss && b.type==='rail') rAdd('railboss',1); rSet('types', uniqueTypesOnField()); }
+            break; }
+        }
+      }
+      // Particles
+      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt; if(p.life<=0) particles.splice(i,1); }
+      // Wave complete -> Intermission
+      let allDead=true; for(let i=0;i<creeps.length;i++){ if(!creeps[i].dead){ allDead=false; break; } }
+      if(allDead){ if(!intermission){ startIntermission(); } }
+      refreshProfile(); if(save.bestWave<wave) save.bestWave=wave;
+    }
+
+    function nearestCreep(c,r,range){ const x=gx(c), y=gy(r); let best=null, bd=1e9; for(let i=0;i<creeps.length;i++){ const m=creeps[i]; if(m.dead||m.delay>0) continue; const d=Math.hypot(m.x-x,m.y-y); if(d<range && d<bd){ best=m; bd=d; } } return best; }
+
+    function fire(t,target){ const x=gx(t.c), y=gy(t.r); const dx=target.x-x, dy=target.y-y; const d=Math.hypot(dx,dy)||1; const sp=360; const vx=dx/d*sp, vy=dy/d*sp; const type=t.splash?'splash':(t.id==='rail'?'rail':'bullet'); bullets.push({x:x,y:y,vx:vx,vy:vy,life:1.2,dmg:t.dmg,type:type,splash:t.splash||0,trail:8}); t.barrel=Math.atan2(dy,dx); addMuzzle(x,y,t.color); if(t.id==='shock' && save.tech.chain){ chainZap(target, 2, t.dmg*0.62); } if(t.id==='piercer' && save.tech.incendiary){ burn(target, t.dmg*0.32); } }
+    function chainZap(start,hops,dmg){ let current=start; for(let i=0;i<hops;i++){ const next=(function(){ for(let k=0;k<creeps.length;k++){ const c=creeps[k]; if(!c.dead && c!==current && Math.hypot(c.x-current.x,c.y-current.y)<86) return c; } return null; })(); if(!next) break; next.hp-=dmg; addZap(current.x,current.y,next.x,next.y); if(next.hp<=0){ next.dead=true; rAdd('kills',1); shards+=12; } current=next; } }
+    function burn(target,dmg){ target.burn=(target.burn||0)+dmg; }
+    function explode(x,y,r,dmg){ for(let i=0;i<creeps.length;i++){ const c=creeps[i]; if(c.dead||c.delay>0) continue; const d=Math.hypot(c.x-x,c.y-y); if(d<r){ let dm=dmg*(1-d/r); if(c.kind==='tank') dm=Math.max(1,dm-6); c.hp-=dm; if(c.hp<=0){ c.dead=true; rAdd('kills',1); shards+=9; } } } addExplosion(x,y,r); }
+
+    // Visuals
+    function addMuzzle(x,y,color){ if(!save.settings.particles) return; for(let i=0;i<8;i++){ const a=Math.random()*Math.PI*2; const s=80+Math.random()*120; particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.22,color:color}); } }
+    function addExplosion(x,y,r){ if(!save.settings.particles) return; for(let i=0;i<20;i++){ const a=Math.random()*Math.PI*2; const s=20+Math.random()*160; particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.55,color:'#fbbf24'}); } }
+    function addZap(x1,y1,x2,y2){ particles.push({x:x1,y:y1,vx:(x2-x1),vy:(y2-y1),life:0.08,color:'#a78bfa',beam:true}); }
+
+    let starT=0;
+    function draw(){ const w=window.innerWidth, h=window.innerHeight; ctx.clearRect(0,0,w,h); const grad=ctx.createLinearGradient(0,0,0,h); grad.addColorStop(0,'#0b1020'); grad.addColorStop(1,'#05060f'); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); starT+=0.6*gameSpeed; ctx.save(); ctx.globalAlpha=0.35; ctx.fillStyle='#90a7ff'; for(let i=0;i<90;i++){ const x=((i*113+starT*3)%w); const y=((i*71+starT*2)%h); ctx.fillRect(x,y,2,2); } ctx.restore();
+      ctx.save(); const pulse=0.2+0.1*Math.sin(starT*0.06); ctx.globalAlpha=0.25+pulse; ctx.strokeStyle='#60a5fa'; ctx.lineWidth=gridSize*0.6; ctx.lineCap='round'; ctx.beginPath(); for(let i=0;i<path.length;i++){ const p=path[i]; const xx=gx(p[0]), yy=gy(p[1]); if(i){ctx.lineTo(xx,yy);} else {ctx.moveTo(xx,yy);} } ctx.stroke(); ctx.restore();
+      for(let r=1;r<rows-1;r++){ for(let c=1;c<cols-1;c++){ if(isOnPath(c,r)) continue; const x=c*gridSize+gridSize*0.2, y=r*gridSize+gridSize*0.2, w2=gridSize*0.6, h2=gridSize*0.6; if(premiumTiles.has(key(c,r))){ ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(x,y,w2,h2); ctx.fillStyle='rgba(147,197,253,.06)'; for(let i=0;i<h2;i+=6){ ctx.fillRect(x,y+i,w2,1);} } else { ctx.fillStyle='rgba(99,102,241,.12)'; ctx.fillRect(x,y,w2,h2); } }}
+      for(let i=0;i<turrets.length;i++){ const t=turrets[i]; const x=gx(t.c), y=gy(t.r); glow(x,y,t.color); ctx.save(); ctx.translate(x,y); ctx.rotate(t.barrel||0); ctx.fillStyle=t.color; roundRect(-18,-18,36,36,10,true); ctx.fillStyle='#e5e7eb'; roundRect(6,-6,18,12,4,true); ctx.restore(); }
+      for(let i=0;i<creeps.length;i++){ const c=creeps[i]; if(c.dead||c.delay>0) continue; const hp=c.hp/c.max; ctx.save(); ctx.translate(c.x,c.y);
+        if(c.kind==='runner'){ ctx.fillStyle='#7dd3fc'; triangle(0,0,20); }
+        else if(c.kind==='tank'){ ctx.fillStyle='#f59e0b'; hex(0,0,16); ctx.strokeStyle='#1f2937'; ctx.stroke(); }
+        else if(c.kind==='swarm'){ ctx.fillStyle='#a78bfa'; circle(-8,-6,6); circle(10,-2,6); circle(-2,10,6); }
+        else { ring(0,0,26); ring(0,0,16); ctx.fillStyle='#fb7185'; circle(0,0,8); if(c.shield>0){ ctx.strokeStyle='#93c5fd'; ring(0,0,32); } }
+        ctx.restore();
+        ctx.fillStyle='#111827'; ctx.fillRect(c.x-14,c.y-18,28,4); ctx.fillStyle='#22c55e'; ctx.fillRect(c.x-14,c.y-18,28*hp,4);
+        if(c.burn){ c.hp -= 6*0.033*gameSpeed; c.burn -= 6*0.033*gameSpeed; }
+      }
+      for(let i=0;i<bullets.length;i++){ const b=bullets[i]; if(b.type==='rail'){ ctx.strokeStyle='#fb7185'; ctx.globalAlpha=0.9; line(b.x,b.y,b.x-b.vx*0.06,b.y-b.vy*0.06); ctx.globalAlpha=1; } else { ctx.fillStyle='#e5e7eb'; ctx.globalAlpha=0.7; ctx.fillRect(b.x-2,b.y-2,4,4); ctx.globalAlpha=1; } }
+      ctx.save(); ctx.globalCompositeOperation='lighter'; for(let i=0;i<particles.length;i++){ const p=particles[i]; if(p.beam){ ctx.strokeStyle=p.color; ctx.globalAlpha=Math.max(0,p.life*3); line(p.x,p.y,p.x+p.vx,p.y+p.vy); } else { ctx.globalAlpha=Math.max(0,p.life*2); ctx.fillStyle=p.color||'#fff'; ctx.fillRect(p.x,p.y,2,2); } } ctx.restore();
+      drawTopBars();
+    }
+
+    function triangle(x,y,s){ ctx.beginPath(); ctx.moveTo(x,y-s*0.8); ctx.lineTo(x+s*0.9,y+s*0.8); ctx.lineTo(x-s*0.9,y+s*0.8); ctx.closePath(); ctx.fill(); }
+    function hex(x,y,r){ ctx.beginPath(); for(let i=0;i<6;i++){ const a=i*Math.PI/3; const px=x+Math.cos(a)*r, py=y+Math.sin(a)*r; if(i){ctx.lineTo(px,py);} else {ctx.moveTo(px,py);} } ctx.closePath(); ctx.fill(); }
+    function circle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
+    function ring(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke(); }
+
+    function glow(x,y,color){ if(!save.settings.glow) return; const g=ctx.createRadialGradient(x,y,6,x,y,40); g.addColorStop(0,color+'55'); g.addColorStop(1,'#0000'); ctx.fillStyle=g; ctx.fillRect(x-60,y-60,120,120); }
+    function roundRect(x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill){ctx.fill();}else{ctx.stroke();} }
+    function line(x1,y1,x2,y2){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+
+    function drawTopBars(){ const w=window.innerWidth; ctx.fillStyle='rgba(147,197,253,.12)'; ctx.fillRect(10,10,w-20,6); const alive=creeps.filter(function(c){return !c.dead&&c.delay<=0}).length; const total=Math.max(1,alive+3); const prog=Math.min(1,alive/total); ctx.fillStyle='#60a5fa'; ctx.fillRect(10,10,(w-20)*(1-prog),6); }
+
+    const toasts=[]; function toast(msg){ toasts.push({msg:msg,t:2}); }
+    const _fillText=ctx.fillText.bind(ctx); const _draw=draw; draw=function(){ _draw(); const w=window.innerWidth; let y=44; ctx.font='14px system-ui, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; for(let i=toasts.length-1;i>=0;i--){ const t=toasts[i]; ctx.globalAlpha=Math.max(0,Math.min(1,t.t)); ctx.fillStyle='#e5e7eb'; _fillText(t.msg.length>60?t.msg.slice(0,60)+'…':t.msg, w/2, y); ctx.globalAlpha=1; y+=18; t.t-=0.02*gameSpeed; if(t.t<=0) toasts.splice(i,1); } };
+
+    // ===== Intermission & flow =====
+    function updateNextBtnLabel(){ ui.nextBtn.textContent = save.settings.autoIntermission ? ('Next Wave (auto in '+intermissionETA+'s)') : 'Next Wave'; }
+    function setupAutoIntermission(){ updatePlayButtons(); if(!intermission) return; clearInterval(intermissionTimerId); intermissionTimerId=null; intermissionETA = Math.max(2, +save.settings.autoIntermissionSec||6); updateNextBtnLabel(); if(save.settings.autoIntermission){ intermissionTimerId = setInterval(function(){ intermissionETA--; updateNextBtnLabel(); if(intermissionETA<=0){ clearInterval(intermissionTimerId); intermissionTimerId=null; nextWave(); } },1000);} }
+
+    function startRun(){ running=true; paused=false; intermission=false; ui.overlay.style.display='none'; ui.tPanel.style.display='none'; clearInterval(intermissionTimerId); intermissionTimerId=null; resetRunProg(); lives=18+(save.tech.fusion?1:0); shards=40+save.armory.startShards*15; interest=save.armory.interest*0.02; wave=1; turrets.length=0; bullets.length=0; creeps.length=0; particles.length=0; shards = Math.max(shards, minAvailableTurretCost()); rSet('types', uniqueTypesOnField()); spawnWave(); requestAnimationFrame(step); refreshProfile(); }
+    function startIntermission(){ intermission=true; running=false; paused=false; bullets.length=0; creeps.length=0; shards+=Math.floor(shards*interest); shards = Math.max(shards, minAvailableTurretCost()); if(save.bestWave<wave) save.bestWave=wave; trackEvent('wave', wave); if(wave>=5 && runProg.livesLost===0) rAdd('noloss',1); ui.overlaySub.textContent = 'Wave '+wave+' cleared. Click turrets to convert their type, or start the next wave.'; ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); setupAutoIntermission(); }
+    function nextWave(){ if(!intermission) return; if(intermissionTimerId){ clearInterval(intermissionTimerId); intermissionTimerId=null; } wave++; intermission=false; running=true; paused=false; ui.overlay.style.display='none'; spawnWave(); requestAnimationFrame(step); }
+    function endRun(){ running=false; intermission=false; ui.overlay.style.display='grid'; const bonus=Math.floor(shards/5); save.cores+=bonus; if(save.bestWave<wave) save.bestWave=wave; toast('Run over — converted '+Math.floor(shards)+' 💎 to +'+bonus+' ⚙'); persist(); buildArmory(); buildTech(); buildChallenges(); updatePlayButtons(); }
+
+    ui.menuBtn.addEventListener('click', openMenu); ui.pauseBtn.addEventListener('click', togglePause);
+    ui.spd05.addEventListener('click', function(){setSpeed(0.5)}); ui.spd10.addEventListener('click', function(){setSpeed(1)}); ui.spd15.addEventListener('click', function(){setSpeed(1.5)}); ui.spd20.addEventListener('click', function(){setSpeed(2)}); ui.spd30.addEventListener('click', function(){setSpeed(3)}); ui.spd40.addEventListener('click', function(){setSpeed(4)});
+    ui.startBtn.addEventListener('click', function(){ startRun(); });
+    ui.resumeBtn.addEventListener('click', function(){ ui.overlay.style.display='none'; paused=false; running=true; updatePlayButtons(); });
+    ui.nextBtn.addEventListener('click', function(){ nextWave(); });
+    ui.resetBtn.addEventListener('click', function(){ if(confirm('Reset all saved progress?')){ localStorage.removeItem(SAVE_ROOT); location.reload(); }});
+
+    ui.tabPlay.addEventListener('click', function(){showTab('Play')}); ui.tabArmory.addEventListener('click', function(){ buildArmory(); showTab('Armory');}); ui.tabChallenges.addEventListener('click', function(){ buildChallenges(); showTab('Challenges'); }); ui.tabTech.addEventListener('click', function(){ buildTech(); showTab('Tech');}); ui.tabSettings.addEventListener('click', function(){showTab('Settings')});
+    ui.setParticles.addEventListener('input',function(){ save.settings.particles=+ui.setParticles.value; persist();}); ui.setGlow.addEventListener('input',function(){ save.settings.glow=+ui.setGlow.value; persist();}); ui.setDiff.addEventListener('change',function(){ save.settings.diff=+ui.setDiff.value; ui.p_diff.textContent={1:'Standard','1.35':'Veteran','1.8':'Insane'}[ui.setDiff.value]; persist();});
+    ui.setAuto.addEventListener('change',function(){ save.settings.autoIntermission = ui.setAuto.checked?1:0; persist(); if(intermission) setupAutoIntermission(); });
+    ui.setAutoSec.addEventListener('input',function(){ var v = Math.max(2, Math.min(30, +ui.setAutoSec.value||6)); ui.setAutoSec.value=v; save.settings.autoIntermissionSec=v; persist(); if(intermission) setupAutoIntermission(); });
+
+    window.addEventListener('keydown',function(e){ if(['p','P','m','M','1','2','3','4','5','6'].includes(e.key)) e.preventDefault(); if(e.key==='p'||e.key==='P') togglePause(); if(e.key==='m'||e.key==='M') openMenu(); if(e.key==='1') setSpeed(0.5); if(e.key==='2') setSpeed(1); if(e.key==='3') setSpeed(1.5); if(e.key==='4') setSpeed(2); if(e.key==='5') setSpeed(3); if(e.key==='6') setSpeed(4); });
+
+    // ===== Spawning =====
+    function makeCreep(hp, speed, delay, kind){ return {hp:hp,max:hp, speed:speed, delay:delay, pathIndex:0, x:gx(path[0][0]), y:gy(path[0][1]), kind:kind, dead:false, armor: (kind==='tank'? 10 : 0), swarm: (kind==='swarm'? 3 : 0), shield: (kind==='boss'? 80 : 0)}; }
+    function spawnWave(){
+      const diff = (save.settings.diff||1);
+      const scale = Math.pow(1.12*diff, wave*0.85);
+      const baseN = 10 + Math.floor(wave*3.8);
+      const n = Math.floor(baseN * (1 + Math.sin(wave*0.3)*0.08));
+      const hpBase = 30 + wave*9.5;
+      const speedBase = 50 + wave*1.9;
+      for(let i=0;i<n;i++){
+        const kind = (i%9===0)? 'tank' : (i%7===0? 'swarm' : 'runner');
+        const hp = hpBase * scale * (kind==='tank'?1.9: (kind==='swarm'?0.6:1.0));
+        const sp = speedBase * (kind==='runner'?1.15: (kind==='swarm'?1.25:0.92));
+        const t=i*0.52; creeps.push(makeCreep(hp, sp, t, kind));
+      }
+      if(wave%5===0){ creeps.push(makeCreep(hpBase*scale*8, speedBase*0.9, 1.2, 'boss')); }
+    }
+
+    // ===== TESTS =====
+    try {
+      console.assert(typeof localStorage==='object','[TEST] localStorage available');
+      console.assert(document.body && document.body.tagName==='BODY','[TEST] body tag present');
+      console.assert(document.getElementById('game') instanceof HTMLCanvasElement,'[TEST] Canvas missing');
+      console.assert(Array.isArray(path),'[TEST] Path not array');
+      console.assert(minAvailableTurretCost()===TURRETS.basic.cost,'[TEST] base turret cost mismatch');
+      // Run challenge state resets
+      resetRunProg(); rAdd('kills',10); console.assert(rGet('kills')===10,'[TEST] run kills tracking'); resetRunProg(); console.assert(rGet('kills')===0,'[TEST] run reset failed');
+      // Conversion pricing monotonic
+      console.assert(TURRETS.piercer.cost>=TURRETS.basic.cost,'[TEST] piercer cost ordering');
+      // Stat upgrade increases stats
+      var tTest={id:'basic', lv:{dmg:0,rof:0,rng:0}}; recomputeTurretStats(tTest); var d0=tTest.dmg; tTest.lv.dmg++; recomputeTurretStats(tTest); console.assert(tTest.dmg>d0,'[TEST] dmg upgrade should increase damage');
+      // Upgrade cost escalates
+      function _cost(l){ return Math.floor(30*Math.pow(1.7,l)); } console.assert(_cost(1)>_cost(0),'[TEST] upgrade cost should escalate');
+      // Panel visible above overlay & has controls
+      showTurretPanel({id:'basic',c:3,r:3,lv:{dmg:0,rof:0,rng:0}}, 300, 120);
+      console.assert(ui.tPanel.style.display==='block','[TEST] tPanel displayed');
+      console.assert(ui.tPanel.innerHTML.includes('data-up') && ui.tPanel.innerHTML.includes('Type Conversion'),'[TEST] panel shows stat upgrades + conversion');
+      console.assert(getComputedStyle(ui.tPanel).zIndex==='50','[TEST] tPanel z-index above overlay');
+      ui.tPanel.style.display='none';
+      // Extra: leaked globals from prior bug do not exist
+      console.assert(typeof window.html==='undefined' && typeof window.div==='undefined','[TEST] no leaked globals');
+    } catch(e){ console.error('[TEST] Runtime test failed', e); }
+
+    // Boot idle overlay & init controls
+    ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges();
+    ui.setParticles.value = save.settings.particles?1:0; ui.setGlow.value = save.settings.glow?1:0; ui.setDiff.value = save.settings.diff||1; ui.setAuto.checked = !!save.settings.autoIntermission; ui.setAutoSec.value = save.settings.autoIntermissionSec||6;
+    refreshProfile();
+    requestAnimationFrame(step);
+  })();
+  </script>
+</body>
+</html>
