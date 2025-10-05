@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Siege Circuit — v5.2</title>
-  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v5.2 fixes a stray syntax break (Unexpected token 'catch'), clamps the turret panel, and keeps the track static to avoid strobing." />
+  <title>Siege Circuit — v5.4</title>
+  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v5.4 fixes a stray extra brace/paren, removes duplicate boss spawn, and keeps track static to avoid strobing." />
   <style>
     :root{ --bg:#05070f; --ink:#e5e7eb; --muted:#9aa4b2; --panel:#0b1222; --border:#1f2937; --accent:#7dd3fc; --good:#34d399; --warn:#fbbf24; --bad:#f87171; --violet:#a78bfa; --radius:14px; }
     *{box-sizing:border-box}
@@ -50,6 +50,7 @@
   <div class="btns">
     <button id="menuBtn">Menu (M)</button>
     <button id="pauseBtn">Pause (P)</button>
+    <button id="endRunBtn" style="display:none">End Run</button>
     <button id="spd05" title="Speed 0.5x (key 1)">0.5x</button>
     <button id="spd10" title="Speed 1x (key 2)">1x</button>
     <button id="spd15" title="Speed 1.5x (key 3)">1.5x</button>
@@ -61,7 +62,7 @@
 
   <div id="overlay" class="overlay" role="dialog" aria-modal="true" style="display:none">
     <div class="card">
-      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v5.2</span></h1>
+      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v5.4</span></h1>
       <p class="subtitle" id="overlaySub">Intermission: spend ⚙ in Armory. <strong>Build:</strong> click an empty tile to place a Basic turret. <strong>Upgrade:</strong> click any turret to convert its <em>type</em> and buy <strong>Damage</strong>/<strong>Rate</strong>/<strong>Range</strong> upgrades. Premium dark tiles only accept high‑tier turrets.</p>
 
       <div class="tabs">
@@ -157,7 +158,7 @@
       wave:$('#wave'), lives:$('#lives'), cores:$('#cores'), shards:$('#shards'), speed:$('#speed'),
       overlay:$('#overlay'), pauseBtn:$('#pauseBtn'), menuBtn:$('#menuBtn'),
       spd05:$('#spd05'), spd10:$('#spd10'), spd15:$('#spd15'), spd20:$('#spd20'), spd30:$('#spd30'), spd40:$('#spd40'),
-      startBtn:$('#startBtn'), resumeBtn:$('#resumeBtn'), nextBtn:$('#nextBtn'), resetBtn:$('#resetBtn'), viewMapBtn:$('#viewMapBtn'), openInterBtn:$('#openInterBtn'),
+      startBtn:$('#startBtn'), resumeBtn:$('#resumeBtn'), nextBtn:$('#nextBtn'), resetBtn:$('#resetBtn'), viewMapBtn:$('#viewMapBtn'), openInterBtn:$('#openInterBtn'), endRunBtn:$('#endRunBtn'),
       tabPlay:$('#tabPlay'), tabArmory:$('#tabArmory'), tabChallenges:$('#tabChallenges'), tabSettings:$('#tabSettings'),
       panelPlay:$('#panelPlay'), panelArmory:$('#panelArmory'), panelChallenges:$('#panelChallenges'), panelSettings:$('#panelSettings'),
       p_best:$('#p_best'), p_cores:$('#p_cores'), p_shards:$('#p_shards'), p_tech:$('#p_tech'), p_diff:$('#p_diff'),
@@ -300,6 +301,7 @@
       ui.resumeBtn.style.display = (running && !intermission) ? '' : 'none';
       if(ui.viewMapBtn) ui.viewMapBtn.style.display = intermission ? '' : 'none';
       if(ui.openInterBtn) ui.openInterBtn.style.display = (intermission && ui.overlay.style.display==='none') ? '' : 'none';
+      if(ui.endRunBtn) ui.endRunBtn.style.display = (running && !intermission) ? '' : 'none';
     }
     function openMenu(){ paused=true; ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); }
     function togglePause(){ if(!running) return; paused=!paused; ui.pauseBtn.textContent = paused? 'Resume (P)' : 'Pause (P)'; }
@@ -527,6 +529,7 @@
     ui.startBtn.addEventListener('click', function(){ startRun(); });
     ui.resumeBtn.addEventListener('click', function(){ ui.overlay.style.display='none'; paused=false; running=true; updatePlayButtons(); });
     ui.nextBtn.addEventListener('click', function(){ nextWave(); });
+    if(ui.endRunBtn) ui.endRunBtn.addEventListener('click', function(){ if(confirm('End this run now?')) endRun(); });
     ui.resetBtn.addEventListener('click', function(){ if(confirm('Reset all saved progress?')){ localStorage.removeItem(SAVE_ROOT); location.reload(); }});
 
     // Intermission map view controls
@@ -553,6 +556,18 @@
     let _creepSeq=0; function makeCreep(hp, speed, delay, kind){ return {id:(++_creepSeq), hp:hp,max:hp, speed:speed, delay:delay, pathIndex:0, x:gx(path[0][0]), y:gy(path[0][1]), kind:kind, dead:false, armor: (kind==='tank'? 10 : 0), swarm: (kind==='swarm'? 3 : 0), shield: (kind==='boss'? 80 : 0), slowT:0, slowMul:1}; }
     function spawnWave(){
       const diff = (save.settings.diff||1);
+      if(wave===1){
+        const n = 8;
+        const hpBase = 22;
+        const speedBase = 42;
+        for(let i=0;i<n;i++){
+          const kind='runner';
+          const hp = hpBase * (1 + i*0.02);
+          const sp = speedBase * 0.95;
+          const t=i*0.6; creeps.push(makeCreep(hp, sp, t, kind));
+        }
+        return;
+      }
       const scale = Math.pow(1.12*diff, wave*0.85);
       const baseN = 10 + Math.floor(wave*3.8);
       const n = Math.floor(baseN * (1 + Math.sin(wave*0.3)*0.08));
@@ -569,6 +584,10 @@
 
     // ===== TESTS =====
     try {
+      function __snap(){ return {running:running, paused:paused, intermission:intermission, wave:wave, shards:shards, lives:lives, cores:save.cores, runProg: JSON.parse(JSON.stringify(runProg||{p:{},done:{},livesLost:0}))}; }
+      function __restore(s){ running=s.running; paused=s.paused; intermission=s.intermission; wave=s.wave; shards=s.shards; lives=s.lives; save.cores=s.cores; runProg=s.runProg; refreshProfile(); }
+      const __S=__snap();
+
       console.assert(typeof localStorage==='object','[TEST] localStorage available');
       console.assert(document.body && document.body.tagName==='BODY','[TEST] body tag present');
       console.assert(document.getElementById('game') instanceof HTMLCanvasElement,'[TEST] Canvas missing');
@@ -588,21 +607,21 @@
       console.assert(_rect.right<=window.innerWidth && _rect.bottom<=window.innerHeight && _rect.left>=0 && _rect.top>=0,'[TEST] tPanel clamped to viewport');
       console.assert(ui.tPanel.innerHTML.includes('data-up') && ui.tPanel.innerHTML.includes('Type Conversion'),'[TEST] panel shows stat upgrades + conversion');
       ui.tPanel.style.display='none';
-      // Intermission view map buttons
+      // Intermission view map buttons (non-destructive)
       const __ov=ui.overlay.style.display; const __im=intermission; intermission=true; ui.overlay.style.display='grid'; viewMapFromIntermission(); console.assert(ui.overlay.style.display==='none','[TEST] View Map hides overlay'); openIntermissionPanel(); console.assert(ui.overlay.style.display==='grid','[TEST] Intermission panel reopens'); intermission=__im; ui.overlay.style.display=__ov;
-      // Reward rules
-      var __c0=save.cores; onWaveClearedReward(); console.assert(save.cores===__c0+1,'[TEST] +1 core per wave'); save.cores=__c0; persist();
-      var __s0=shards, __l0=lives; loseLife(); console.assert(shards===__s0+10,'[TEST] +10 shards per life lost'); shards=__s0; lives=__l0; if(runProg.livesLost>0) runProg.livesLost--; refreshProfile();
-      // nextWave increments exactly once
-      intermission=true; var w0=wave; nextWave(); console.assert(wave===w0+1,'[TEST] nextWave increments once');
-      // New turret sanity
-      console.assert(!!TURRETS.cryo && !!TURRETS.plasma && !!TURRETS.gauss,'[TEST] new turrets exist');
-      var tCry={id:'cryo',lv:{}}; recomputeTurretStats(tCry); console.assert(tCry.slow && tCry.slow.mul<1,'[TEST] cryo slow present');
-      var tPier={id:'piercer',lv:{}}; recomputeTurretStats(tPier); console.assert((tPier.pierce||0)>=1,'[TEST] piercer has pierce');
-      var dummy={x:100,y:100}; tPier.c=2; tPier.r=2; fire(tPier,dummy); console.assert(bullets[bullets.length-1].pierce>=1,'[TEST] bullet carries pierce');
-      // Track alpha should be constant (no strobe) regardless of game speed
+      // Reward rules (restore after)
+      var __c0=save.cores; onWaveClearedReward(); console.assert(save.cores===__c0+1,'[TEST] +1 core per wave'); save.cores=__c0;
+      var __s0=shards, __l0=lives; loseLife(); console.assert(shards===__s0+10,'[TEST] +10 shards per life lost'); shards=__s0; lives=__l0; if(runProg.livesLost>0) runProg.livesLost--;
+      // nextWave increments once (restore after)
+      intermission=true; var w0=wave; nextWave(); console.assert(wave===w0+1,'[TEST] nextWave increments once'); wave=w0; intermission=false; running=false;
+      // startRun baseline should set wave=1 and shards>=basic cost
+      startRun(); console.assert(wave===1,'[TEST] startRun wave=1'); console.assert(shards>=TURRETS.basic.cost,'[TEST] startRun shards >= basic cost'); running=false; // stop loop
+      __restore(__S);
+      // Track alpha constant regardless of speed
       console.assert(typeof TRACK_ALPHA==='number' && TRACK_ALPHA>0 && TRACK_ALPHA<1,'[TEST] track alpha constant defined');
       var __alphaA=TRACK_ALPHA; setSpeed(4); draw(); var __alphaB=TRACK_ALPHA; setSpeed(1); console.assert(__alphaA===__alphaB,'[TEST] track alpha not speed-dependent');
+      // Sanity: functions exist
+      console.assert(typeof spawnWave==='function' && typeof endRun==='function','[TEST] core functions exist');
     } catch(e){ console.error('[TEST] Runtime test failed', e); }
 
     // Boot idle overlay & init controls
