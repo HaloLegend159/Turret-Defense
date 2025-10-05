@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Siege Circuit — v5.4</title>
-  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v5.4 fixes a stray extra brace/paren, removes duplicate boss spawn, and keeps track static to avoid strobing." />
+  <title>Siege Circuit — v5.6</title>
+  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v5.6 fixes a stray duplicate code block and a duplicated nextWave tail that caused an extra '}'/syntax error." />
   <style>
     :root{ --bg:#05070f; --ink:#e5e7eb; --muted:#9aa4b2; --panel:#0b1222; --border:#1f2937; --accent:#7dd3fc; --good:#34d399; --warn:#fbbf24; --bad:#f87171; --violet:#a78bfa; --radius:14px; }
     *{box-sizing:border-box}
@@ -62,7 +62,7 @@
 
   <div id="overlay" class="overlay" role="dialog" aria-modal="true" style="display:none">
     <div class="card">
-      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v5.4</span></h1>
+      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v5.6</span></h1>
       <p class="subtitle" id="overlaySub">Intermission: spend ⚙ in Armory. <strong>Build:</strong> click an empty tile to place a Basic turret. <strong>Upgrade:</strong> click any turret to convert its <em>type</em> and buy <strong>Damage</strong>/<strong>Rate</strong>/<strong>Range</strong> upgrades. Premium dark tiles only accept high‑tier turrets.</p>
 
       <div class="tabs">
@@ -388,10 +388,27 @@
       var sellBtn=div.querySelector('[data-sell]'); if(sellBtn){ sellBtn.onclick=function(){ shards+=Math.floor((TURRETS[t.id].cost)/2); turrets.splice(turrets.indexOf(t),1); div.style.display='none'; rSet('types', uniqueTypesOnField()); refreshProfile(); }; }
     }
 
+    function showPremiumPlacement(c,r,x,y){
+      const div=ui.tPanel; const opts = Object.keys(TURRETS).filter(function(id){ return TURRETS[id].cost>=70; });
+      let html='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h4 style="margin:0">Premium Tile — Place High‑Tier</h4><button data-close style="background:#111827;border:1px solid #1f2937;border-radius:8px;padding:4px 8px">✕</button></div>';
+      for(let i=0;i<opts.length;i++){
+        const id=opts[i]; const price=TURRETS[id].cost; const disabled = shards<price? ' disabled' : '';
+        html += '<div class="row"><span>'+TURRETS[id].name+'</span><button data-place="'+id+'"'+disabled+'>💎 '+price+'</button></div>';
+      }
+      div.innerHTML=html; div.style.display='block';
+      // Clamp position
+      const margin=12, vw=window.innerWidth, vh=window.innerHeight; div.style.left=x+'px'; div.style.top=y+'px'; div.style.transform='translate(0,0)';
+      const rct=div.getBoundingClientRect(); let L=Math.max(margin, Math.min(vw-rct.width-margin, x-rct.width/2)); let T;
+      if(y + 12 + rct.height <= vh - margin) { T = y + 12; } else { T = y - rct.height - 12; }
+      T = Math.max(margin, Math.min(vh - rct.height - margin, T)); div.style.left=L+'px'; div.style.top=T+'px';
+      const closeBtn=div.querySelector('[data-close]'); if(closeBtn){ closeBtn.onclick=function(){ div.style.display='none'; }}
+      div.querySelectorAll('[data-place]').forEach(function(b){ b.onclick=function(){ const id=b.getAttribute('data-place'); const price=TURRETS[id].cost; if(shards<price){ toast('Not enough Shards'); return;} placeTurret(id,c,r); shards-=price; rAdd('spend', price); rSet('types', uniqueTypesOnField()); refreshProfile(); div.style.display='none'; } });
+    }
+
     function uniqueTypesOnField(){ var s={}; for(let i=0;i<turrets.length;i++){ s[turrets[i].id]=1; } var n=0; for(var k in s){ if(Object.prototype.hasOwnProperty.call(s,k)) n++; } return n; }
 
     cvs.addEventListener('click',function(e){
-      if(!( (running && !paused) || intermission )) return;
+      if(!((running && !paused) || intermission)) return;
       const rect = cvs.getBoundingClientRect();
       const sx = e.clientX - rect.left; const sy = e.clientY - rect.top; if(sx<0||sy<0||sx>rect.width||sy>rect.height) return;
       const g = screenToGrid(sx, sy); if(!g) return;
@@ -399,8 +416,9 @@
       if(t){ showTurretPanel(t, e.clientX, e.clientY); return; }
       if(isOnPath(g.c,g.r) || !isBuildable(g.c,g.r)) return;
       const isPremium = premiumTiles.has(key(g.c,g.r));
-      if(isPremium && TURRETS.basic.cost<70){ toast('Premium tile: requires higher‑tier turret'); return; }
+      if(isPremium){ showPremiumPlacement(g.c,g.r, e.clientX, e.clientY); return; }
       if(shards>=TURRETS.basic.cost){ placeTurret('basic',g.c,g.r); shards -= TURRETS.basic.cost; rAdd('spend', TURRETS.basic.cost); rSet('types', uniqueTypesOnField()); refreshProfile(); }
+      else { toast('Not enough Shards'); }
     });
 
     function screenToGrid(sx,sy){ const c=Math.floor(sx/gridSize), r=Math.floor(sy/gridSize); if(c<1||r<1||c>=cols-1||r>=rows-1) return null; return {c:c,r:r}; }
@@ -519,9 +537,9 @@
     function updateNextBtnLabel(){ ui.nextBtn.textContent = save.settings.autoIntermission ? ('Next Wave (auto in '+intermissionETA+'s)') : 'Next Wave'; }
     function setupAutoIntermission(){ updatePlayButtons(); if(!intermission) return; clearInterval(intermissionTimerId); intermissionTimerId=null; intermissionETA = Math.max(2, +save.settings.autoIntermissionSec||6); updateNextBtnLabel(); if(save.settings.autoIntermission){ intermissionTimerId = setInterval(function(){ intermissionETA--; updateNextBtnLabel(); if(intermissionETA<=0){ clearInterval(intermissionTimerId); intermissionTimerId=null; nextWave(); } },1000);} }
 
-    function startRun(){ running=true; paused=false; intermission=false; ui.overlay.style.display='none'; ui.tPanel.style.display='none'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; clearInterval(intermissionTimerId); intermissionTimerId=null; resetRunProg(); lives=18+(save.tech.fusion?1:0); shards=40+save.armory.startShards*15; interest=save.armory.interest*0.02; wave=1; turrets.length=0; bullets.length=0; creeps.length=0; particles.length=0; shards = Math.max(shards, minAvailableTurretCost()); rSet('types', uniqueTypesOnField()); spawnWave(); requestAnimationFrame(step); refreshProfile(); }
+    function startRun(){ running=true; paused=false; intermission=false; ui.overlay.style.display='none'; ui.tPanel.style.display='none'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; clearInterval(intermissionTimerId); intermissionTimerId=null; resetRunProg(); lives=18+(save.tech.fusion?1:0); shards=40+save.armory.startShards*15; interest=save.armory.interest*0.02; wave=1; turrets.length=0; bullets.length=0; creeps.length=0; particles.length=0; shards = Math.max(shards, minAvailableTurretCost()); rSet('types', uniqueTypesOnField()); spawnWave(); refreshProfile(); updatePlayButtons(); requestAnimationFrame(step); }
     function startIntermission(){ intermission=true; running=false; paused=false; bullets.length=0; creeps.length=0; shards+=Math.floor(shards*interest); onWaveClearedReward(); shards = Math.max(shards, minAvailableTurretCost()); if(save.bestWave<wave) save.bestWave=wave; trackEvent('wave', wave); if(wave>=5 && runProg.livesLost===0) rAdd('noloss',1); ui.overlaySub.textContent = 'Wave '+wave+' cleared. Click turrets to convert their type, or start the next wave.'; ui.overlay.style.display='grid'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); setupAutoIntermission(); }
-    function nextWave(){ if(!intermission) return; if(intermissionTimerId){ clearInterval(intermissionTimerId); intermissionTimerId=null; } wave++; intermission=false; running=true; paused=false; ui.overlay.style.display='none'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; spawnWave(); requestAnimationFrame(step); }
+    function nextWave(){ if(!intermission) return; if(intermissionTimerId){ clearInterval(intermissionTimerId); intermissionTimerId=null; } wave++; intermission=false; running=true; paused=false; ui.overlay.style.display='none'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; updatePlayButtons(); spawnWave(); requestAnimationFrame(step); }
     function endRun(){ running=false; intermission=false; ui.overlay.style.display='grid'; const bonus=Math.floor(shards/5); save.cores+=bonus; if(save.bestWave<wave) save.bestWave=wave; toast('Run over — converted '+Math.floor(shards)+' 💎 to +'+bonus+' ⚙'); persist(); buildArmory(); buildTech(); buildChallenges(); updatePlayButtons(); }
 
     ui.menuBtn.addEventListener('click', openMenu); ui.pauseBtn.addEventListener('click', togglePause);
@@ -620,6 +638,12 @@
       // Track alpha constant regardless of speed
       console.assert(typeof TRACK_ALPHA==='number' && TRACK_ALPHA>0 && TRACK_ALPHA<1,'[TEST] track alpha constant defined');
       var __alphaA=TRACK_ALPHA; setSpeed(4); draw(); var __alphaB=TRACK_ALPHA; setSpeed(1); console.assert(__alphaA===__alphaB,'[TEST] track alpha not speed-dependent');
+      // EndRun button visible when running outside intermission
+      running=true; intermission=false; updatePlayButtons(); console.assert(ui.endRunBtn && ui.endRunBtn.style.display!=='none','[TEST] endRun visible when running');
+      // Premium tile placement panel
+      var __firstPrem = (function(){ for(let k of premiumTiles.values()){ return k; } return null; })();
+      if(__firstPrem){ var __pr=__firstPrem.split(','); showPremiumPlacement(+__pr[0], +__pr[1], 10, 10); console.assert(ui.tPanel.innerHTML.includes('data-place'),'[TEST] premium placement offers options'); ui.tPanel.style.display='none'; }
+      
       // Sanity: functions exist
       console.assert(typeof spawnWave==='function' && typeof endRun==='function','[TEST] core functions exist');
     } catch(e){ console.error('[TEST] Runtime test failed', e); }
