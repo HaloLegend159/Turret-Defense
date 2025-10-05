@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Siege Circuit — v4.7</title>
+  <title>Siege Circuit — v4.8</title>
   <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v4.7 removes Tech Tree and fixes a stray parenthesis bug causing a parse error." />
   <style>
     :root{ --bg:#05070f; --ink:#e5e7eb; --muted:#9aa4b2; --panel:#0b1222; --border:#1f2937; --accent:#7dd3fc; --good:#34d399; --warn:#fbbf24; --bad:#f87171; --violet:#a78bfa; --radius:14px; }
@@ -60,7 +60,7 @@
 
   <div id="overlay" class="overlay" role="dialog" aria-modal="true" style="display:none">
     <div class="card">
-      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v4.7</span></h1>
+      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v4.8</span></h1>
       <p class="subtitle" id="overlaySub">Intermission: spend ⚙ in Armory. <strong>Build:</strong> click an empty tile to place a Basic turret. <strong>Upgrade:</strong> click any turret to convert its <em>type</em> and buy <strong>Damage</strong>/<strong>Rate</strong>/<strong>Range</strong> upgrades. Premium dark tiles only accept high‑tier turrets.</p>
 
       <div class="tabs">
@@ -261,6 +261,18 @@
 
     let intermissionTimerId=null, intermissionETA=0;
 
+    // Rewards helpers (v4.8)
+    function loseLife(){
+      lives--; runProg.livesLost++;
+      shards += 10; // +10 shards per life lost
+      refreshProfile();
+    }
+    function onWaveClearedReward(){
+      save.cores += 1; // +1 core per wave clear
+      toast('+1 ⚙ Core for wave clear');
+      persist();
+    }
+
     function gridInit(){
       cols = Math.floor(window.innerWidth/gridSize)-1; rows = Math.floor(window.innerHeight/gridSize)-2; if(cols<10) cols=10; if(rows<8) rows=8;
       path=[]; let y=2; let dir=1; while(y<rows-1){ if(dir>0){ for(let x=1;x<cols-1;x++) path.push([x,y]); } else { for(let x=cols-2;x>=1;x--) path.push([x,y]); } y+=2; dir*=-1; }
@@ -390,13 +402,13 @@
         let remaining = (c.speed * (c.slowMul||1)) * dt;
         while(remaining>0 && !c.dead){
           const p = path[c.pathIndex];
-          if(!p){ lives--; runProg.livesLost++; c.dead=true; if(lives<=0){ endRun(); return; } break; }
+          if(!p){ loseLife(); c.dead=true; if(lives<=0){ endRun(); return; } break; }
           const nx=gx(p[0]), ny=gy(p[1]);
           const dx=nx-c.x, dy=ny-c.y; const dist=Math.hypot(dx,dy);
           if(dist<=remaining){
             c.x = nx; c.y = ny; c.pathIndex++;
             remaining -= dist;
-            if(c.pathIndex>=path.length){ lives--; runProg.livesLost++; c.dead=true; if(lives<=0){ endRun(); return; } break; }
+            if(c.pathIndex>=path.length){ loseLife(); c.dead=true; if(lives<=0){ endRun(); return; } break; }
           } else {
             const ux = dx/(dist||1), uy = dy/(dist||1);
             c.x += ux*remaining; c.y += uy*remaining;
@@ -488,7 +500,7 @@
     function setupAutoIntermission(){ updatePlayButtons(); if(!intermission) return; clearInterval(intermissionTimerId); intermissionTimerId=null; intermissionETA = Math.max(2, +save.settings.autoIntermissionSec||6); updateNextBtnLabel(); if(save.settings.autoIntermission){ intermissionTimerId = setInterval(function(){ intermissionETA--; updateNextBtnLabel(); if(intermissionETA<=0){ clearInterval(intermissionTimerId); intermissionTimerId=null; nextWave(); } },1000);} }
 
     function startRun(){ running=true; paused=false; intermission=false; ui.overlay.style.display='none'; ui.tPanel.style.display='none'; clearInterval(intermissionTimerId); intermissionTimerId=null; resetRunProg(); lives=18+(save.tech.fusion?1:0); shards=40+save.armory.startShards*15; interest=save.armory.interest*0.02; wave=1; turrets.length=0; bullets.length=0; creeps.length=0; particles.length=0; shards = Math.max(shards, minAvailableTurretCost()); rSet('types', uniqueTypesOnField()); spawnWave(); requestAnimationFrame(step); refreshProfile(); }
-    function startIntermission(){ intermission=true; running=false; paused=false; bullets.length=0; creeps.length=0; shards+=Math.floor(shards*interest); shards = Math.max(shards, minAvailableTurretCost()); if(save.bestWave<wave) save.bestWave=wave; trackEvent('wave', wave); if(wave>=5 && runProg.livesLost===0) rAdd('noloss',1); ui.overlaySub.textContent = 'Wave '+wave+' cleared. Click turrets to convert their type, or start the next wave.'; ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); setupAutoIntermission(); }
+    function startIntermission(){ intermission=true; running=false; paused=false; bullets.length=0; creeps.length=0; shards+=Math.floor(shards*interest); onWaveClearedReward(); shards = Math.max(shards, minAvailableTurretCost()); if(save.bestWave<wave) save.bestWave=wave; trackEvent('wave', wave); if(wave>=5 && runProg.livesLost===0) rAdd('noloss',1); ui.overlaySub.textContent = 'Wave '+wave+' cleared. Click turrets to convert their type, or start the next wave.'; ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); setupAutoIntermission(); }
     function nextWave(){ if(!intermission) return; if(intermissionTimerId){ clearInterval(intermissionTimerId); intermissionTimerId=null; } wave++; intermission=false; running=true; paused=false; ui.overlay.style.display='none'; spawnWave(); requestAnimationFrame(step); }
     function endRun(){ running=false; intermission=false; ui.overlay.style.display='grid'; const bonus=Math.floor(shards/5); save.cores+=bonus; if(save.bestWave<wave) save.bestWave=wave; toast('Run over — converted '+Math.floor(shards)+' 💎 to +'+bonus+' ⚙'); persist(); buildArmory(); buildTech(); buildChallenges(); updatePlayButtons(); }
 
@@ -559,6 +571,9 @@
       var tCry={id:'cryo',lv:{}}; recomputeTurretStats(tCry); console.assert(tCry.slow && tCry.slow.mul<1,'[TEST] cryo slow present');
       var tPier={id:'piercer',lv:{}}; recomputeTurretStats(tPier); console.assert((tPier.pierce||0)>=1,'[TEST] piercer has pierce');
       var dummy={x:100,y:100}; tPier.c=2; tPier.r=2; fire(tPier,dummy); console.assert(bullets[bullets.length-1].pierce>=1,'[TEST] bullet carries pierce');
+      // New reward tests (non-persistent)
+      var __c0=save.cores; onWaveClearedReward(); console.assert(save.cores===__c0+1,'[TEST] +1 core per wave'); save.cores=__c0; persist();
+      var __s0=shards, __l0=lives; loseLife(); console.assert(shards===__s0+10,'[TEST] +10 shards per life lost'); shards=__s0; lives=__l0; if(runProg.livesLost>0) runProg.livesLost--; refreshProfile();
     } catch(e){ console.error('[TEST] Runtime test failed', e); }
 
     // Boot idle overlay & init controls
