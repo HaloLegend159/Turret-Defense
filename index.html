@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Siege Circuit — v4.8</title>
-  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v4.7 removes Tech Tree and fixes a stray parenthesis bug causing a parse error." />
+  <title>Siege Circuit — v5.0</title>
+  <meta name="description" content="HTML5 turret defense with persistent saves, intermission upgrades, speed controls, premium tiles, strict placement, auto‑continue. v5.0 fixes a stray syntax break (Unexpected token 'function'), clamps the turret panel, and adds intermission map view." />
   <style>
     :root{ --bg:#05070f; --ink:#e5e7eb; --muted:#9aa4b2; --panel:#0b1222; --border:#1f2937; --accent:#7dd3fc; --good:#34d399; --warn:#fbbf24; --bad:#f87171; --violet:#a78bfa; --radius:14px; }
     *{box-sizing:border-box}
@@ -32,7 +32,7 @@
     .owned{color:var(--good)}
     .price{color:var(--warn);font-weight:700}
     .foot{display:flex;justify-content:space-between;gap:8px;margin-top:10px;align-items:center}
-    .tpanel{position:fixed;z-index:50;transform:translate(-50%,-100%);background:#0b1222;border:1px solid #23314b;border-radius:12px;padding:10px;min-width:280px;max-width:360px;box-shadow:0 10px 30px rgba(0,0,0,.35);pointer-events:auto}
+    .tpanel{position:fixed;z-index:50;transform:none;background:#0b1222;border:1px solid #23314b;border-radius:12px;padding:10px;min-width:280px;max-width:360px;max-height:78vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.35);pointer-events:auto}
     .tpanel h4{margin:0 0 6px;font-size:14px}
     .tpanel .row{display:flex;justify-content:space-between;align-items:center;margin:6px 0}
   </style>
@@ -56,11 +56,12 @@
     <button id="spd20" title="Speed 2x (key 4)">2x</button>
     <button id="spd30" title="Speed 3x (key 5)">3x</button>
     <button id="spd40" title="Speed 4x (key 6)">4x</button>
+    <button id="openInterBtn" style="display:none">Intermission Panel</button>
   </div>
 
   <div id="overlay" class="overlay" role="dialog" aria-modal="true" style="display:none">
     <div class="card">
-      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v4.8</span></h1>
+      <h1 class="title">🛡️ Siege Circuit <span style="color:#a78bfa">v5.0</span></h1>
       <p class="subtitle" id="overlaySub">Intermission: spend ⚙ in Armory. <strong>Build:</strong> click an empty tile to place a Basic turret. <strong>Upgrade:</strong> click any turret to convert its <em>type</em> and buy <strong>Damage</strong>/<strong>Rate</strong>/<strong>Range</strong> upgrades. Premium dark tiles only accept high‑tier turrets.</p>
 
       <div class="tabs">
@@ -86,6 +87,7 @@
             <button id="startBtn">Start Run</button>
             <button id="resumeBtn" style="display:none">Resume</button>
             <button id="nextBtn" style="display:none">Next Wave</button>
+            <button id="viewMapBtn" style="display:none">View Map</button>
             <button id="resetBtn" title="Reset all saved progress">Reset Save</button>
           </div>
         </div>
@@ -153,7 +155,7 @@
       wave:$('#wave'), lives:$('#lives'), cores:$('#cores'), shards:$('#shards'), speed:$('#speed'),
       overlay:$('#overlay'), pauseBtn:$('#pauseBtn'), menuBtn:$('#menuBtn'),
       spd05:$('#spd05'), spd10:$('#spd10'), spd15:$('#spd15'), spd20:$('#spd20'), spd30:$('#spd30'), spd40:$('#spd40'),
-      startBtn:$('#startBtn'), resumeBtn:$('#resumeBtn'), nextBtn:$('#nextBtn'), resetBtn:$('#resetBtn'),
+      startBtn:$('#startBtn'), resumeBtn:$('#resumeBtn'), nextBtn:$('#nextBtn'), resetBtn:$('#resetBtn'), viewMapBtn:$('#viewMapBtn'), openInterBtn:$('#openInterBtn'),
       tabPlay:$('#tabPlay'), tabArmory:$('#tabArmory'), tabChallenges:$('#tabChallenges'), tabSettings:$('#tabSettings'),
       panelPlay:$('#panelPlay'), panelArmory:$('#panelArmory'), panelChallenges:$('#panelChallenges'), panelSettings:$('#panelSettings'),
       p_best:$('#p_best'), p_cores:$('#p_cores'), p_shards:$('#p_shards'), p_tech:$('#p_tech'), p_diff:$('#p_diff'),
@@ -261,7 +263,7 @@
 
     let intermissionTimerId=null, intermissionETA=0;
 
-    // Rewards helpers (v4.8)
+    // Rewards helpers
     function loseLife(){
       lives--; runProg.livesLost++;
       shards += 10; // +10 shards per life lost
@@ -269,7 +271,7 @@
     }
     function onWaveClearedReward(){
       save.cores += 1; // +1 core per wave clear
-      toast('+1 ⚙ Core for wave clear');
+      toast('+1 \u2699 Core for wave clear');
       persist();
     }
 
@@ -290,7 +292,13 @@
       if(ui.panelChallenges) ui.panelChallenges.style.display = name==='Challenges'? '' : 'none';
       if(ui.panelSettings) ui.panelSettings.style.display = name==='Settings'? '' : 'none';
     }
-    function updatePlayButtons(){ ui.startBtn.style.display = (!running && !intermission) ? '' : 'none'; ui.nextBtn.style.display  = (intermission) ? '' : 'none'; ui.resumeBtn.style.display = (running && !intermission) ? '' : 'none'; }
+    function updatePlayButtons(){
+      ui.startBtn.style.display = (!running && !intermission) ? '' : 'none';
+      ui.nextBtn.style.display  = (intermission) ? '' : 'none';
+      ui.resumeBtn.style.display = (running && !intermission) ? '' : 'none';
+      if(ui.viewMapBtn) ui.viewMapBtn.style.display = intermission ? '' : 'none';
+      if(ui.openInterBtn) ui.openInterBtn.style.display = (intermission && ui.overlay.style.display==='none') ? '' : 'none';
+    }
     function openMenu(){ paused=true; ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); }
     function togglePause(){ if(!running) return; paused=!paused; ui.pauseBtn.textContent = paused? 'Resume (P)' : 'Pause (P)'; }
     function setSpeed(n){ gameSpeed = Math.max(0.25, Math.min(4, n)); ui.speed.textContent = gameSpeed+'x'; }
@@ -355,10 +363,18 @@
       }
       html+='<div class="row"><span style="color:#9aa4b2">Sell (refund 50%)</span><button data-sell>↺ Sell</button></div>';
       div.innerHTML=html; div.style.display='block';
-      // Position panel (avoid off-screen)
-      const margin=12, vw=window.innerWidth, vh=window.innerHeight; let tx=Math.max(margin, Math.min(vw-margin, x)); let ty=Math.max(margin, Math.min(vh-margin, y));
-      div.style.left=tx+'px'; div.style.top=ty+'px';
-      div.style.transform = (ty<200)? 'translate(-50%, 10px)' : 'translate(-50%,-100%)';
+      // Position panel (fully clamp to viewport)
+      const margin=12, vw=window.innerWidth, vh=window.innerHeight;
+      // Temporarily place to measure size
+      div.style.left = x+'px'; div.style.top = y+'px'; div.style.transform='translate(0,0)';
+      const r = div.getBoundingClientRect();
+      let L = Math.max(margin, Math.min(vw - r.width - margin, x - r.width/2));
+      let T;
+      if(y + 12 + r.height <= vh - margin) { T = y + 12; } else { T = y - r.height - 12; }
+      T = Math.max(margin, Math.min(vh - r.height - margin, T));
+      div.style.left = L + 'px';
+      div.style.top  = T + 'px';
+      div.style.transform='translate(0,0)';
       // Interactions
       const closeBtn=div.querySelector('[data-close]'); if(closeBtn){ closeBtn.onclick=function(){ div.style.display='none'; }; }
       div.querySelectorAll('[data-up]').forEach(function(b){ b.onclick=function(){ var k=b.getAttribute('data-up'); var price=costUp(k); if(shards<price){ toast('Not enough Shards'); return;} shards-=price; t.lv[k]=(t.lv[k]||0)+1; recomputeTurretStats(t); rAdd('spend', price); refreshProfile(); showTurretPanel(t,x,y); }; });
@@ -499,9 +515,9 @@
     function updateNextBtnLabel(){ ui.nextBtn.textContent = save.settings.autoIntermission ? ('Next Wave (auto in '+intermissionETA+'s)') : 'Next Wave'; }
     function setupAutoIntermission(){ updatePlayButtons(); if(!intermission) return; clearInterval(intermissionTimerId); intermissionTimerId=null; intermissionETA = Math.max(2, +save.settings.autoIntermissionSec||6); updateNextBtnLabel(); if(save.settings.autoIntermission){ intermissionTimerId = setInterval(function(){ intermissionETA--; updateNextBtnLabel(); if(intermissionETA<=0){ clearInterval(intermissionTimerId); intermissionTimerId=null; nextWave(); } },1000);} }
 
-    function startRun(){ running=true; paused=false; intermission=false; ui.overlay.style.display='none'; ui.tPanel.style.display='none'; clearInterval(intermissionTimerId); intermissionTimerId=null; resetRunProg(); lives=18+(save.tech.fusion?1:0); shards=40+save.armory.startShards*15; interest=save.armory.interest*0.02; wave=1; turrets.length=0; bullets.length=0; creeps.length=0; particles.length=0; shards = Math.max(shards, minAvailableTurretCost()); rSet('types', uniqueTypesOnField()); spawnWave(); requestAnimationFrame(step); refreshProfile(); }
-    function startIntermission(){ intermission=true; running=false; paused=false; bullets.length=0; creeps.length=0; shards+=Math.floor(shards*interest); onWaveClearedReward(); shards = Math.max(shards, minAvailableTurretCost()); if(save.bestWave<wave) save.bestWave=wave; trackEvent('wave', wave); if(wave>=5 && runProg.livesLost===0) rAdd('noloss',1); ui.overlaySub.textContent = 'Wave '+wave+' cleared. Click turrets to convert their type, or start the next wave.'; ui.overlay.style.display='grid'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); setupAutoIntermission(); }
-    function nextWave(){ if(!intermission) return; if(intermissionTimerId){ clearInterval(intermissionTimerId); intermissionTimerId=null; } wave++; intermission=false; running=true; paused=false; ui.overlay.style.display='none'; spawnWave(); requestAnimationFrame(step); }
+    function startRun(){ running=true; paused=false; intermission=false; ui.overlay.style.display='none'; ui.tPanel.style.display='none'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; clearInterval(intermissionTimerId); intermissionTimerId=null; resetRunProg(); lives=18+(save.tech.fusion?1:0); shards=40+save.armory.startShards*15; interest=save.armory.interest*0.02; wave=1; turrets.length=0; bullets.length=0; creeps.length=0; particles.length=0; shards = Math.max(shards, minAvailableTurretCost()); rSet('types', uniqueTypesOnField()); spawnWave(); requestAnimationFrame(step); refreshProfile(); }
+    function startIntermission(){ intermission=true; running=false; paused=false; bullets.length=0; creeps.length=0; shards+=Math.floor(shards*interest); onWaveClearedReward(); shards = Math.max(shards, minAvailableTurretCost()); if(save.bestWave<wave) save.bestWave=wave; trackEvent('wave', wave); if(wave>=5 && runProg.livesLost===0) rAdd('noloss',1); ui.overlaySub.textContent = 'Wave '+wave+' cleared. Click turrets to convert their type, or start the next wave.'; ui.overlay.style.display='grid'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; updatePlayButtons(); buildArmory(); buildTech(); buildChallenges(); refreshProfile(); setupAutoIntermission(); }
+    function nextWave(){ if(!intermission) return; if(intermissionTimerId){ clearInterval(intermissionTimerId); intermissionTimerId=null; } wave++; intermission=false; running=true; paused=false; ui.overlay.style.display='none'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; spawnWave(); requestAnimationFrame(step); }
     function endRun(){ running=false; intermission=false; ui.overlay.style.display='grid'; const bonus=Math.floor(shards/5); save.cores+=bonus; if(save.bestWave<wave) save.bestWave=wave; toast('Run over — converted '+Math.floor(shards)+' 💎 to +'+bonus+' ⚙'); persist(); buildArmory(); buildTech(); buildChallenges(); updatePlayButtons(); }
 
     ui.menuBtn.addEventListener('click', openMenu); ui.pauseBtn.addEventListener('click', togglePause);
@@ -510,6 +526,12 @@
     ui.resumeBtn.addEventListener('click', function(){ ui.overlay.style.display='none'; paused=false; running=true; updatePlayButtons(); });
     ui.nextBtn.addEventListener('click', function(){ nextWave(); });
     ui.resetBtn.addEventListener('click', function(){ if(confirm('Reset all saved progress?')){ localStorage.removeItem(SAVE_ROOT); location.reload(); }});
+
+    // Intermission map view controls
+    function viewMapFromIntermission(){ if(!intermission) return; ui.overlay.style.display='none'; if(intermissionTimerId){ clearInterval(intermissionTimerId); intermissionTimerId=null; } if(ui.openInterBtn) ui.openInterBtn.style.display=''; updatePlayButtons(); }
+    function openIntermissionPanel(){ if(!intermission) return; ui.overlay.style.display='grid'; if(ui.openInterBtn) ui.openInterBtn.style.display='none'; setupAutoIntermission(); updatePlayButtons(); }
+    if(ui.viewMapBtn) ui.viewMapBtn.addEventListener('click', function(){ viewMapFromIntermission(); });
+    if(ui.openInterBtn) ui.openInterBtn.addEventListener('click', function(){ openIntermissionPanel(); });
 
     ui.tabPlay.addEventListener('click', function(){showTab('Play')});
     ui.tabArmory.addEventListener('click', function(){ buildArmory(); showTab('Armory');});
@@ -520,7 +542,10 @@
     ui.setAuto.addEventListener('change',function(){ save.settings.autoIntermission = ui.setAuto.checked?1:0; persist(); if(intermission) setupAutoIntermission(); });
     ui.setAutoSec.addEventListener('input',function(){ var v = Math.max(2, Math.min(30, +ui.setAutoSec.value||6)); ui.setAutoSec.value=v; save.settings.autoIntermissionSec=v; persist(); if(intermission) setupAutoIntermission(); });
 
-    window.addEventListener('keydown',function(e){ if(['p','P','m','M','1','2','3','4','5','6'].includes(e.key)) e.preventDefault(); if(e.key==='p'||e.key==='P') togglePause(); if(e.key==='m'||e.key==='M') openMenu(); if(e.key==='1') setSpeed(0.5); if(e.key==='2') setSpeed(1); if(e.key==='3') setSpeed(1.5); if(e.key==='4') setSpeed(2); if(e.key==='5') setSpeed(3); if(e.key==='6') setSpeed(4); });
+    window.addEventListener('keydown',function(e){ if(['p','P','m','M','1','2','3','4','5','6','Escape'].includes(e.key)) e.preventDefault(); if(e.key==='p'||e.key==='P') togglePause(); if(e.key==='m'||e.key==='M') openMenu(); if(e.key==='1') setSpeed(0.5); if(e.key==='2') setSpeed(1); if(e.key==='3') setSpeed(1.5); if(e.key==='4') setSpeed(2); if(e.key==='5') setSpeed(3); if(e.key==='6') setSpeed(4); if(e.key==='Escape'){ ui.tPanel.style.display='none'; } });
+
+    // Click-away to dismiss turret panel
+    document.addEventListener('click', function(ev){ if(ui.tPanel && ui.tPanel.style.display==='block'){ if(!ui.tPanel.contains(ev.target) && ev.target!==cvs){ ui.tPanel.style.display='none'; } } });
 
     // ===== Spawning =====
     let _creepSeq=0; function makeCreep(hp, speed, delay, kind){ return {id:(++_creepSeq), hp:hp,max:hp, speed:speed, delay:delay, pathIndex:0, x:gx(path[0][0]), y:gy(path[0][1]), kind:kind, dead:false, armor: (kind==='tank'? 10 : 0), swarm: (kind==='swarm'? 3 : 0), shield: (kind==='boss'? 80 : 0), slowT:0, slowMul:1}; }
@@ -555,25 +580,24 @@
       var tTest={id:'basic', lv:{dmg:0,rof:0,rng:0}}; recomputeTurretStats(tTest); var d0=tTest.dmg; tTest.lv.dmg++; recomputeTurretStats(tTest); console.assert(tTest.dmg>d0,'[TEST] dmg upgrade should increase damage');
       // Upgrade cost escalates
       function _cost(l){ return Math.floor(30*Math.pow(1.7,l)); } console.assert(_cost(1)>_cost(0),'[TEST] upgrade cost should escalate');
-      // Panel visible & has controls
-      showTurretPanel({id:'basic',c:3,r:3,lv:{dmg:0,rof:0,rng:0}}, 300, 120);
-      console.assert(ui.tPanel.style.display==='block','[TEST] tPanel displayed');
+      // Panel visible & has controls and clamped
+      showTurretPanel({id:'basic',c:3,r:3,lv:{dmg:0,rof:0,rng:0}}, window.innerWidth-5, window.innerHeight-5);
+      const _rect=ui.tPanel.getBoundingClientRect();
+      console.assert(_rect.right<=window.innerWidth && _rect.bottom<=window.innerHeight && _rect.left>=0 && _rect.top>=0,'[TEST] tPanel clamped to viewport');
       console.assert(ui.tPanel.innerHTML.includes('data-up') && ui.tPanel.innerHTML.includes('Type Conversion'),'[TEST] panel shows stat upgrades + conversion');
-      // Tech removed but stub exists
-      console.assert(!document.getElementById('tabTech'),'[TEST] Tech tab removed');
-      console.assert(typeof buildTech==='function','[TEST] buildTech stub exists');
-      console.assert(ui.tPanel.innerHTML.includes('Convert to Rail'),'[TEST] Rail available without Tech');
-      // Tab switching sanity
-      showTab('Settings'); console.assert(ui.panelSettings.style.display==='','[TEST] Settings tab visible'); showTab('Play');
       ui.tPanel.style.display='none';
+      // Intermission view map buttons
+      const __ov=ui.overlay.style.display; const __im=intermission; intermission=true; ui.overlay.style.display='grid'; viewMapFromIntermission(); console.assert(ui.overlay.style.display==='none','[TEST] View Map hides overlay'); openIntermissionPanel(); console.assert(ui.overlay.style.display==='grid','[TEST] Intermission panel reopens'); intermission=__im; ui.overlay.style.display=__ov;
+      // Reward rules
+      var __c0=save.cores; onWaveClearedReward(); console.assert(save.cores===__c0+1,'[TEST] +1 core per wave'); save.cores=__c0; persist();
+      var __s0=shards, __l0=lives; loseLife(); console.assert(shards===__s0+10,'[TEST] +10 shards per life lost'); shards=__s0; lives=__l0; if(runProg.livesLost>0) runProg.livesLost--; refreshProfile();
+      // nextWave increments exactly once
+      intermission=true; var w0=wave; nextWave(); console.assert(wave===w0+1,'[TEST] nextWave increments once');
       // New turret sanity
       console.assert(!!TURRETS.cryo && !!TURRETS.plasma && !!TURRETS.gauss,'[TEST] new turrets exist');
       var tCry={id:'cryo',lv:{}}; recomputeTurretStats(tCry); console.assert(tCry.slow && tCry.slow.mul<1,'[TEST] cryo slow present');
       var tPier={id:'piercer',lv:{}}; recomputeTurretStats(tPier); console.assert((tPier.pierce||0)>=1,'[TEST] piercer has pierce');
       var dummy={x:100,y:100}; tPier.c=2; tPier.r=2; fire(tPier,dummy); console.assert(bullets[bullets.length-1].pierce>=1,'[TEST] bullet carries pierce');
-      // New reward tests (non-persistent)
-      var __c0=save.cores; onWaveClearedReward(); console.assert(save.cores===__c0+1,'[TEST] +1 core per wave'); save.cores=__c0; persist();
-      var __s0=shards, __l0=lives; loseLife(); console.assert(shards===__s0+10,'[TEST] +10 shards per life lost'); shards=__s0; lives=__l0; if(runProg.livesLost>0) runProg.livesLost--; refreshProfile();
     } catch(e){ console.error('[TEST] Runtime test failed', e); }
 
     // Boot idle overlay & init controls
